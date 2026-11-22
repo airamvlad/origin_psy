@@ -1,0 +1,83 @@
+#pragma once
+
+#include "Parameters.h"
+#include "dsp/Chain.h"
+#include "dsp/Fraza.h"
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+#include <array>
+#include <atomic>
+
+class OriginPsyProcessor : public juce::AudioProcessor
+{
+public:
+    OriginPsyProcessor();
+    ~OriginPsyProcessor() override = default;
+
+    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override {}
+    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    using AudioProcessor::processBlock;
+
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override { return true; }
+
+    const juce::String getName() const override { return JucePlugin_Name; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    bool isMidiEffect() const override { return false; }
+    double getTailLengthSeconds() const override { return 12.0; }
+
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+
+    void getStateInformation (juce::MemoryBlock& destData) override;
+    void setStateInformation (const void* data, int sizeInBytes) override;
+
+    juce::AudioProcessorValueTreeState apvts;
+
+    // Drawn gate patterns (Steps mode). Not host parameters: a 32 step
+    // pattern does not fit a float. Saved with the project.
+    uint32_t getGatePattern (int band) const noexcept { return gatePatterns[(size_t) band].load(); }
+    void setGatePattern (int band, uint32_t pattern);
+    void toggleGateStep (int band, int step);
+
+    /** Sets the Fraza amounts to a ready made build-up (the Drop button). */
+    void applyDropPreset();
+
+    // Read by the editor for its displays.
+    struct Meters
+    {
+        std::atomic<int> vokalNote { -1 };
+        std::atomic<float> vokalVowel { 0.0f };
+        std::atomic<float> vokalAccent { 0.0f };
+        std::array<std::atomic<int>, 3> gateStep { { -1, -1, -1 } };
+        std::atomic<double> frazaPosition { 0.0 };
+        std::atomic<float> frazaValue { 0.0f };
+        std::atomic<double> bpm { 140.0 };
+        std::atomic<bool> hostPlaying { false };
+    } meters;
+
+    /** The tree of echoes as it is set now (for the editor's drawing). */
+    int getEchoTaps (std::array<originpsy::FraktalEcho::Tap, originpsy::FraktalEcho::maxTaps>& out) const;
+
+private:
+    originpsy::Transport readTransport (int numSamples);
+    void updateModules (float fraza);
+    float value (const juce::String& id) const { return apvts.getRawParameterValue (id)->load(); }
+    float modulated (const juce::String& id, int targetIndex, float fraza) const;
+
+    originpsy::Chain chain;
+    originpsy::InternalClock clock;
+    double sampleRate = 48000.0;
+    juce::SmoothedValue<float> outGain;
+    std::vector<float> monoScratch;
+    std::array<std::atomic<uint32_t>, 3> gatePatterns { { 0x1111u, 0x15u, 0x1249u } };
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OriginPsyProcessor)
+};

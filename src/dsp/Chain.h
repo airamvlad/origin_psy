@@ -1,0 +1,148 @@
+#pragma once
+
+#include "FraktalEcho.h"
+#include "PolimetarGate.h"
+#include "VokalAcid.h"
+
+#include <array>
+
+namespace originpsy
+{
+
+enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate };
+constexpr int numModuleTypes = 4;
+
+inline const char* moduleName (ModuleType t) noexcept
+{
+    switch (t)
+    {
+        case ModuleType::fraktalEcho:   return "Fraktal Echo";
+        case ModuleType::vokalAcid:     return "Vokal Acid";
+        case ModuleType::polimetarGate: return "Polimetar Gate";
+        case ModuleType::empty:         break;
+    }
+    return "Prazno";
+}
+
+/** Four slots, each holding one of the modules. A module can sit in one
+    slot at a time; a second slot asking for the same module stays empty.
+    Changing the layout fades out, swaps and fades back in, so there is no
+    click. */
+class Chain
+{
+public:
+    static constexpr int numSlots = 4;
+
+    struct Layout
+    {
+        std::array<ModuleType, numSlots> slots { ModuleType::vokalAcid, ModuleType::polimetarGate,
+                                                 ModuleType::fraktalEcho, ModuleType::empty };
+        std::array<bool, numSlots> bypass {};
+
+        bool operator== (const Layout& o) const noexcept { return slots == o.slots && bypass == o.bypass; }
+        bool operator!= (const Layout& o) const noexcept { return ! (*this == o); }
+
+        /** The layout with duplicate modules and bypassed slots removed. */
+        std::array<ModuleType, numSlots> effective() const noexcept
+        {
+            std::array<ModuleType, numSlots> out {};
+            std::array<bool, numModuleTypes> used {};
+            for (int i = 0; i < numSlots; ++i)
+            {
+                const auto t = slots[(size_t) i];
+                const int ti = (int) t;
+                if (t == ModuleType::empty || bypass[(size_t) i] || ti < 0 || ti >= numModuleTypes || used[(size_t) ti])
+                    continue;
+                used[(size_t) ti] = true;
+                out[(size_t) i] = t;
+            }
+            return out;
+        }
+    };
+
+    FraktalEcho echo;
+    VokalAcid vokal;
+    PolimetarGate gate;
+
+    void prepare (double sampleRate, int maxBlock)
+    {
+        sr = sampleRate;
+        echo.prepare (sampleRate, maxBlock);
+        vokal.prepare (sampleRate, maxBlock);
+        gate.prepare (sampleRate, maxBlock);
+        fadeSamples = std::max (1, (int) (sampleRate * 0.008));
+        reset();
+    }
+
+    void reset()
+    {
+        echo.reset();
+        vokal.reset();
+        gate.reset();
+        fadeGain = 1.0f;
+        fadingOut = false;
+        active = pending;
+    }
+
+    void setLayout (const Layout& l) noexcept { pending = l; }
+    const Layout& activeLayout() const noexcept { return active; }
+
+    void process (float* left, float* right, int numSamples, const Transport& t) noexcept
+    {
+        if (pending.effective() != active.effective() && ! fadingOut)
+            fadingOut = true;
+        else if (pending != active && pending.effective() == active.effective())
+            active = pending; // nothing audible changes
+
+        for (auto type : active.effective())
+        {
+            switch (type)
+            {
+                case ModuleType::fraktalEcho:   echo.process (left, right, numSamples, t); break;
+                case ModuleType::vokalAcid:     vokal.process (left, right, numSamples, t); break;
+                case ModuleType::polimetarGate: gate.process (left, right, numSamples, t); break;
+                case ModuleType::empty: break;
+            }
+        }
+
+        const float step = 1.0f / (float) fadeSamples;
+        for (int n = 0; n < numSamples; ++n)
+        {
+            if (fadingOut) fadeGain = std::max (0.0f, fadeGain - step);
+            else           fadeGain = std::min (1.0f, fadeGain + step);
+            left[n] *= fadeGain;
+            right[n] *= fadeGain;
+        }
+
+        if (fadingOut && fadeGain <= 0.0f)
+        {
+            // Modules that join the chain start clean, without old tails.
+            const auto before = active.effective();
+            active = pending;
+            for (auto type : active.effective())
+                if (std::find (before.begin(), before.end(), type) == before.end())
+                    resetModule (type);
+            fadingOut = false;
+        }
+    }
+
+private:
+    void resetModule (ModuleType t)
+    {
+        switch (t)
+        {
+            case ModuleType::fraktalEcho:   echo.reset(); break;
+            case ModuleType::vokalAcid:     vokal.reset(); break;
+            case ModuleType::polimetarGate: gate.reset(); break;
+            case ModuleType::empty: break;
+        }
+    }
+
+    double sr = 48000.0;
+    Layout active, pending;
+    int fadeSamples = 384;
+    float fadeGain = 1.0f;
+    bool fadingOut = false;
+};
+
+} // namespace originpsy

@@ -1,0 +1,185 @@
+#include "Parameters.h"
+
+#include "dsp/Chain.h"
+#include "dsp/Fraza.h"
+#include "dsp/Scales.h"
+
+namespace originpsy::params
+{
+
+juce::StringArray divisionNames()
+{
+    juce::StringArray s;
+    for (const auto& d : noteDivisions) s.add (d.name);
+    return s;
+}
+
+juce::StringArray scaleNames()
+{
+    juce::StringArray s;
+    for (const auto& sc : scales) s.add (sc.name);
+    return s;
+}
+
+juce::StringArray vowelNames() { return { "A", "E", "I", "O", "U" }; }
+
+juce::StringArray moduleNames()
+{
+    juce::StringArray s;
+    for (int i = 0; i < numModuleTypes; ++i) s.add (moduleName ((ModuleType) i));
+    return s;
+}
+
+juce::StringArray frazaCurveNames()
+{
+    return { "Rise", "Rise (late)", "Last bar", "Last 2 bars", "Last 4 bars", "Fall", "Every 4th bar" };
+}
+
+namespace
+{
+using Range = juce::NormalisableRange<float>;
+
+juce::String formatValue (float v, const juce::String& unit)
+{
+    if (unit == "Hz")
+        return v >= 1000.0f ? juce::String (v / 1000.0f, 2) + " kHz" : juce::String (juce::roundToInt (v)) + " Hz";
+    if (unit == "ms")
+        return juce::String (v, v < 10.0f ? 1 : 0) + " ms";
+    if (unit == "st" || unit == "dB")
+        return (v > 0.0f ? "+" : "") + juce::String (v, 1) + " " + unit;
+    if (unit == "amount")
+        return (v > 0.0f ? "+" : "") + juce::String (juce::roundToInt (v * 100.0f)) + " %";
+    return juce::String (v, 3);
+}
+
+std::unique_ptr<juce::AudioParameterFloat> flt (const juce::String& id, const juce::String& name, Range range,
+                                                float def, const juce::String& unit = {})
+{
+    return std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { id, 1 }, name, range, def,
+        juce::AudioParameterFloatAttributes()
+            .withLabel (unit == "amount" ? juce::String() : unit)
+            .withStringFromValueFunction ([unit] (float v, int) { return formatValue (v, unit); })
+            .withValueFromStringFunction ([unit] (const juce::String& t) {
+                const float v = t.getFloatValue();
+                if (unit == "amount") return v / 100.0f;
+                if (unit == "Hz" && t.containsIgnoreCase ("k")) return v * 1000.0f;
+                return v;
+            }));
+}
+
+std::unique_ptr<juce::AudioParameterFloat> percent (const juce::String& id, const juce::String& name, float def)
+{
+    return std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { id, 1 }, name, Range (0.0f, 1.0f), def,
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction ([] (float v, int) { return juce::String (juce::roundToInt (v * 100.0f)) + " %"; })
+            .withValueFromStringFunction ([] (const juce::String& t) { return t.getFloatValue() / 100.0f; }));
+}
+
+std::unique_ptr<juce::AudioParameterChoice> choice (const juce::String& id, const juce::String& name,
+                                                    const juce::StringArray& items, int def)
+{
+    return std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { id, 1 }, name, items, def);
+}
+
+std::unique_ptr<juce::AudioParameterInt> integer (const juce::String& id, const juce::String& name, int lo, int hi, int def)
+{
+    return std::make_unique<juce::AudioParameterInt> (juce::ParameterID { id, 1 }, name, lo, hi, def);
+}
+
+Range skewed (float lo, float hi, float centre)
+{
+    Range r (lo, hi);
+    r.setSkewForCentre (centre);
+    return r;
+}
+} // namespace
+
+juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
+{
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+
+    layout.add (flt (outGain, "Output", Range (-24.0f, 12.0f, 0.1f), 0.0f, "dB"));
+
+    // Chain: Vokal Acid -> Polimetar Gate -> Fraktal Echo by default.
+    const int defaults[] = { (int) ModuleType::vokalAcid, (int) ModuleType::polimetarGate,
+                             (int) ModuleType::fraktalEcho, (int) ModuleType::empty };
+    for (int i = 0; i < Chain::numSlots; ++i)
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> (
+            "slot" + juce::String (i + 1), "Slot " + juce::String (i + 1), " | ");
+        group->addChild (choice (slotModule (i), "Slot " + juce::String (i + 1) + " Module", moduleNames(), defaults[i]));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { slotBypass (i), 1 }, "Slot " + juce::String (i + 1) + " Bypass", false));
+        layout.add (std::move (group));
+    }
+
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("echo", "Fraktal Echo", " | ");
+        g->addChild (choice (echoTime, "Echo Time", divisionNames(), 5));
+        g->addChild (flt (echoRatio, "Echo Branch Ratio", Range (0.25f, 0.9f, 0.001f), 0.618f));
+        g->addChild (integer (echoGenerations, "Echo Generations", 1, 4, 3));
+        g->addChild (choice (echoScale, "Echo Scale", scaleNames(), 0));
+        g->addChild (integer (echoSpread, "Echo Pitch Spread", -7, 7, 2));
+        g->addChild (percent (echoFeedback, "Echo Feedback", 0.35f));
+        g->addChild (percent (echoDamp, "Echo Damp", 0.4f));
+        g->addChild (percent (echoWidth, "Echo Width", 0.7f));
+        g->addChild (percent (echoMix, "Echo Mix", 0.35f));
+        layout.add (std::move (g));
+    }
+
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("vokal", "Vokal Acid", " | ");
+        const char* notes[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        const int defaultVowel[] = { 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1 };
+        for (int pc = 0; pc < 12; ++pc)
+            g->addChild (choice (vokalVowel (pc), juce::String ("Vokal Vowel ") + notes[pc], vowelNames(), defaultVowel[pc]));
+        g->addChild (flt (vokalGlide, "Vokal Glide", skewed (5.0f, 500.0f, 60.0f), 60.0f, "ms"));
+        g->addChild (flt (vokalShift, "Vokal Formant Shift", Range (-12.0f, 12.0f, 0.01f), 0.0f, "st"));
+        g->addChild (percent (vokalResonance, "Vokal Resonance", 0.5f));
+        g->addChild (percent (vokalAccent, "Vokal Accent", 0.5f));
+        g->addChild (choice (vokalCharacter, "Vokal Character", { "Male", "Female", "Robot" }, 1));
+        g->addChild (percent (vokalDrive, "Vokal Drive", 0.2f));
+        g->addChild (percent (vokalMix, "Vokal Mix", 0.8f));
+        layout.add (std::move (g));
+    }
+
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("gate", "Polimetar Gate", " | ");
+        g->addChild (flt (gateLow, "Gate Low | Mid", skewed (40.0f, 1000.0f, 200.0f), 200.0f, "Hz"));
+        g->addChild (flt (gateHigh, "Gate Mid | High", skewed (600.0f, 12000.0f, 2500.0f), 2500.0f, "Hz"));
+        g->addChild (percent (gateMix, "Gate Mix", 1.0f));
+        const char* bandNames[] = { "Low", "Mid", "High" };
+        const int defSteps[] = { 16, 7, 13 }, defHits[] = { 4, 3, 5 };
+        for (int b = 0; b < 3; ++b)
+        {
+            const juce::String n = juce::String ("Gate ") + bandNames[b] + " ";
+            g->addChild (choice (gateBand (b, "mode"), n + "Mode", { "Steps", "Euclid" }, 1));
+            g->addChild (integer (gateBand (b, "steps"), n + "Steps", 1, 32, defSteps[b]));
+            g->addChild (integer (gateBand (b, "hits"), n + "Hits", 0, 32, defHits[b]));
+            g->addChild (integer (gateBand (b, "rotate"), n + "Rotate", 0, 31, 0));
+            g->addChild (choice (gateBand (b, "rate"), n + "Rate", divisionNames(), 2));
+            g->addChild (percent (gateBand (b, "depth"), n + "Depth", b == 0 ? 0.0f : 1.0f));
+            g->addChild (percent (gateBand (b, "length"), n + "Length", 0.6f));
+            g->addChild (flt (gateBand (b, "attack"), n + "Attack", skewed (0.1f, 50.0f, 5.0f), 1.0f, "ms"));
+            g->addChild (flt (gateBand (b, "release"), n + "Release", skewed (0.1f, 200.0f, 20.0f), 20.0f, "ms"));
+        }
+        layout.add (std::move (g));
+    }
+
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("fraza", "Fraza", " | ");
+        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { frazaOn, 1 }, "Fraza On", true));
+        g->addChild (choice (frazaBars, "Fraza Length", { "8 bars", "16 bars", "32 bars" }, 1));
+        g->addChild (integer (frazaOffset, "Fraza Offset", 0, 31, 0));
+        g->addChild (choice (frazaCurve, "Fraza Curve", frazaCurveNames(), Fraza::last4Bars));
+        for (const auto& t : frazaTargets)
+            g->addChild (flt (t.id, juce::String ("Fraza > ") + t.label, Range (-1.0f, 1.0f, 0.001f), 0.0f, "amount"));
+        layout.add (std::move (g));
+    }
+
+    return layout;
+}
+
+} // namespace originpsy::params
