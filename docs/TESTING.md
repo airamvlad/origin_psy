@@ -53,6 +53,14 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] Sweep +24 falls onto the note, -24 rises onto it; Resonance 0 % sounds noisy, 100 % a clean tone
 - [ ] Mix 50 %: hats plus zaps; 100 %: only zaps
 
+## MIDI control
+
+- [ ] Bitwig: notes reach OriginPsy (instrument track after the synth, or Note Receiver); "MIDI" flashes in the header
+- [ ] Hold C1 with Tape Stop in a slot: the tape slows down, let go and it comes back; the BRAKE button lights up
+- [ ] D1 fires DROP (same as the button)
+- [ ] E1 / F1 step through the presets; Program Change from a clip loads the matching preset
+- [ ] Other notes do nothing
+
 ## Sidechain
 
 - [ ] Bitwig: the plugin offers a sidechain input; pick the kick track

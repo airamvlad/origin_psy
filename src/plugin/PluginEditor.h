@@ -364,6 +364,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> limitAttachment;
     juce::TooltipWindow tooltips { this, 700 };
     int shownModule = 1;
+    uint32_t lastMidiEvents = 0;
+    float midiFlash = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OriginPsyEditor)
 };

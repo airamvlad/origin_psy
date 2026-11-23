@@ -457,6 +457,65 @@ void presets()
     tmp.deleteRecursively();
 }
 
+void midiControl()
+{
+    OriginPsyProcessor p;
+    check (p.acceptsMidi(), "the plugin takes MIDI");
+    for (int i = 0; i < Chain::numSlots; ++i) setValue (p, params::slotModule (i), 0.0f);
+    setValue (p, params::slotModule (0), (float) ModuleType::tapeStop);
+    setValue (p, params::frazaOn, 0.0f);
+    p.prepareToPlay (48000.0, 256);
+
+    juce::AudioBuffer<float> buffer (2, 256);
+    auto block = [&] (const juce::MidiBuffer& m)
+    {
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 256; ++i) buffer.setSample (ch, i, 0.3f * std::sin ((float) i * 0.05f));
+        juce::MidiBuffer copy (m);
+        p.processBlock (buffer, copy);
+        check (copy.isEmpty(), "MIDI is not passed on");
+    };
+
+    // Hold C1: the tape slows down; let go: it comes back.
+    juce::MidiBuffer on, off, none;
+    on.addEvent (juce::MidiMessage::noteOn (1, OriginPsyProcessor::midiNoteBrake, (juce::uint8) 100), 0);
+    off.addEvent (juce::MidiMessage::noteOff (1, OriginPsyProcessor::midiNoteBrake), 0);
+    block (on);
+    for (int i = 0; i < 400; ++i) block (none);
+    check (p.meters.midiBrake.load() && p.meters.tapeSpeed.load() < 0.5f, "holding C1 brakes the tape");
+    block (off);
+    for (int i = 0; i < 400; ++i) block (none);
+    check (! p.meters.midiBrake.load() && p.meters.tapeSpeed.load() > 0.99f, "letting go of C1 brings the tape back");
+
+    // D1: DROP.
+    juce::MidiBuffer drop;
+    drop.addEvent (juce::MidiMessage::noteOn (3, OriginPsyProcessor::midiNoteDrop, (juce::uint8) 100), 10);
+    block (drop);
+    p.flushMidiActions();
+    check (p.apvts.getRawParameterValue (params::frazaOn)->load() > 0.5f, "D1 fires DROP");
+
+    // Program change and next / previous preset.
+    PresetManager pm (p);
+    const auto entries = pm.list();
+    juce::MidiBuffer pc;
+    pc.addEvent (juce::MidiMessage::programChange (1, 2), 0);
+    block (pc);
+    p.flushMidiActions();
+    check (p.currentPresetName == entries[2].name, "program change 2 loads the third preset");
+    juce::MidiBuffer next;
+    next.addEvent (juce::MidiMessage::noteOn (1, OriginPsyProcessor::midiNoteNext, (juce::uint8) 100), 0);
+    block (next);
+    p.flushMidiActions();
+    check (p.currentPresetName == entries[3].name, "F1 loads the next preset");
+    juce::MidiBuffer prev;
+    prev.addEvent (juce::MidiMessage::noteOn (1, OriginPsyProcessor::midiNotePrev, (juce::uint8) 100), 0);
+    prev.addEvent (juce::MidiMessage::noteOn (1, OriginPsyProcessor::midiNotePrev, (juce::uint8) 100), 5);
+    block (prev);
+    p.flushMidiActions();
+    check (p.currentPresetName == entries[1].name, "two E1 notes step back two presets");
+    check (p.meters.midiEvents.load() >= 6, "MIDI activity is counted for the display");
+}
+
 void sidechain()
 {
     OriginPsyProcessor p;
@@ -557,6 +616,7 @@ int main (int argc, char** argv)
     state();
     modulation();
     presets();
+    midiControl();
     sidechain();
     reorder();
     randomizer();
