@@ -61,6 +61,16 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] E1 / F1 step through the presets; Program Change from a clip loads the matching preset
 - [ ] Other notes do nothing
 
+## Sidechain
+
+- [ ] Bitwig: the plugin offers a sidechain input; pick the kick track
+- [ ] Polymeter Gate, Low band Mode Sidechain, Depth 100 %: the bass ducks on every kick; Release changes how fast it comes back
+- [ ] All bands on Sidechain: the whole track pumps with the kick
+- [ ] Zap Resonator, Listen to Sidechain: a zap on every kick
+- [ ] SC chip moves with the kick; dragged onto Echo Mix (direction Down) it ducks the echoes
+- [ ] No sidechain picked: the gate ring and the Zap page say "no sidechain", nothing breaks
+- [ ] Mono track with a stereo sidechain still works
+
 ## Orbit Doppler
 
 - [ ] On a lead: the sound goes round the head in time with the song (One lap = 1 bar)

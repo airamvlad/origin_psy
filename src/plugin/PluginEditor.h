@@ -146,7 +146,7 @@ public:
 
 private:
     OriginPsyProcessor& proc;
-    Choice scale, root, order;
+    Choice scale, root, order, key;
     Knob threshold, octave, sweep, sweepTime, decay, resonance, width, mix;
     uint32_t lastHits = 0;
     float flash = 0.0f;
