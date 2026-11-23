@@ -138,6 +138,32 @@ const std::vector<PresetManager::Factory>& PresetManager::factoryPresets()
               connect (p, ModSource::macro4, params::orbitDoppler, 0.3f);
           } },
 
+        { "Spectral Stutter", "Glitch", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::spectralRatchet, ModuleType::fraktalEcho, ModuleType::empty);
+              set (p, params::ratchetRate, 2.0f);     // 1/16
+              set (p, params::ratchetSteps, 8.0f);
+              set (p, params::ratchetInterval, 4.0f); // scale up
+              set (p, params::ratchetMask, 3.0f);     // alternate combs
+              set (p, params::ratchetSmear, 0.2f);
+              set (p, params::echoMix, 0.2f);
+              p.setRatchetPattern (0xEEEEu);
+              macros (p);
+          } },
+
+        { "Frozen Choir", "Pads", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::spectralRatchet, ModuleType::orbitDoppler, ModuleType::empty);
+              set (p, params::ratchetRate, 8.0f);     // 1/4
+              set (p, params::ratchetSteps, 16.0f);
+              set (p, params::ratchetInterval, 3.0f); // fifths up
+              set (p, params::ratchetSmear, 0.6f);
+              set (p, params::ratchetTilt, -0.3f);
+              set (p, params::ratchetMix, 0.7f);
+              set (p, params::orbitRate, 9.0f);       // 8 bars
+              set (p, params::orbitMix, 0.6f);
+              p.setRatchetPattern (0xFFFEu);
+              macros (p);
+          } },
+
         { "Polymeter Pad", "Pads", [] (OriginPsyProcessor& p) {
               slots (p, ModuleType::polimetarGate, ModuleType::fraktalEcho, ModuleType::empty);
               set (p, params::gateBand (0, "depth"), 0.3f);
@@ -206,6 +232,7 @@ void PresetManager::randomize (OriginPsyProcessor& p, bool mutateOnly, juce::Ran
     const std::pair<ModuleType, const char*> prefixes[] = {
         { ModuleType::fraktalEcho, "echo_" }, { ModuleType::vokalAcid, "vokal_" }, { ModuleType::polimetarGate, "gate_" },
         { ModuleType::zapResonator, "zap_" }, { ModuleType::orbitDoppler, "orbit_" }, { ModuleType::tapeStop, "tape_" },
+        { ModuleType::spectralRatchet, "ratchet_" },
     };
     juce::StringArray active;
     for (int i = 0; i < 4; ++i)
@@ -256,6 +283,7 @@ void PresetManager::randomize (OriginPsyProcessor& p, bool mutateOnly, juce::Ran
         if (id.endsWith ("_mix")) { lo = 0.25f; hi = 0.8f; }
         else if (id == params::echoFeedback) hi = 0.7f;
         else if (id.endsWith ("_depth")) lo = 0.3f;
+        else if (id.startsWith ("gate_") && id.endsWith ("_mode")) hi = ranged->convertTo0to1 (1.0f); // Steps or Euclid, never Sidechain
         const float real = juce::jlimit (ranged->convertFrom0to1 (lo), ranged->convertFrom0to1 (hi), ranged->convertFrom0to1 (norm));
         ranged->setValueNotifyingHost (ranged->convertTo0to1 (real));
     }
@@ -302,6 +330,7 @@ void PresetManager::resetToDefaults (OriginPsyProcessor& p)
     p.setGatePattern (0, 0x1111u);
     p.setGatePattern (1, 0x15u);
     p.setGatePattern (2, 0x1249u);
+    p.setRatchetPattern (0xEEEEu);
 }
 
 bool PresetManager::loadFactory (int index)

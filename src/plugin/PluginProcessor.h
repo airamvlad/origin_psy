@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-class OriginPsyProcessor : public juce::AudioProcessor
+class OriginPsyProcessor : public juce::AudioProcessor, private juce::AsyncUpdater
 {
 public:
     OriginPsyProcessor();
@@ -50,6 +50,11 @@ public:
     void setGatePattern (int band, uint32_t pattern);
     void toggleGateStep (int band, int step);
 
+    // Spectral Ratchet freeze steps (bit set = freeze), saved like the gate patterns.
+    uint32_t getRatchetPattern() const noexcept { return ratchetPattern.load(); }
+    void setRatchetPattern (uint32_t pattern) noexcept { ratchetPattern = pattern & 0xffffu; }
+    void toggleRatchetStep (int step) noexcept { if (step >= 0 && step < 16) ratchetPattern ^= (1u << step); }
+
     /** Sets the Fraza amounts to a ready made build-up (the Drop button). */
     void applyDropPreset();
 
@@ -61,6 +66,9 @@ public:
         std::atomic<float> vokalAccent { 0.0f };
         std::array<std::atomic<int>, 3> gateStep { { -1, -1, -1 } };
         std::atomic<float> tapeSpeed { 1.0f };
+        std::atomic<int> ratchetStep { -1 };
+        std::atomic<bool> ratchetFreezing { false };
+        std::array<std::atomic<float>, originpsy::SpectralRatchet::numBands> ratchetBands {};
         std::atomic<int> zapNote { -1 };
         std::atomic<uint32_t> zapHits { 0 };
         std::atomic<float> zapLevel { 0.0f };
@@ -111,6 +119,9 @@ private:
     std::unique_ptr<std::atomic<float>[]> modNorm;
     std::vector<int> frazaTargetOf;
     std::array<std::atomic<uint32_t>, 3> gatePatterns { { 0x1111u, 0x15u, 0x1249u } };
+    std::atomic<uint32_t> ratchetPattern { 0xEEEEu };
+    std::atomic<int> wantedLatency { 0 };
+    void handleAsyncUpdate() override { setLatencySamples (wantedLatency.load()); }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OriginPsyProcessor)
 };

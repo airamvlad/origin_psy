@@ -15,6 +15,7 @@ juce::Colour moduleColour (int type)
         case ModuleType::zapResonator:  return colours::lime;
         case ModuleType::orbitDoppler:  return colours::blue;
         case ModuleType::tapeStop:      return colours::orange;
+        case ModuleType::spectralRatchet: return colours::violet;
         case ModuleType::empty:         break;
     }
     return colours::dim;
@@ -786,6 +787,99 @@ void TapePage::resized()
 }
 
 //==============================================================================
+RatchetPage::RatchetPage (OriginPsyProcessor& p)
+    : proc (p),
+      rate (p.apvts, params::ratchetRate, "Step rate"),
+      interval (p.apvts, params::ratchetInterval, "Interval"),
+      scale (p.apvts, params::ratchetScale, "Scale"),
+      mask (p.apvts, params::ratchetMask, "Mask"),
+      steps (p.apvts, params::ratchetSteps, "Steps", colours::violet),
+      smear (p.apvts, params::ratchetSmear, "Smear", colours::violet),
+      tilt (p.apvts, params::ratchetTilt, "Tilt", colours::violet),
+      mix (p.apvts, params::ratchetMix, "Mix", colours::violet)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &rate, &interval, &scale, &mask, &steps, &smear, &tilt, &mix })
+        addAndMakeVisible (c);
+}
+
+juce::Rectangle<float> RatchetPage::stepArea() const
+{
+    return getLocalBounds().toFloat().withWidth (560.0f).reduced (24.0f, 0.0f).withTop ((float) getHeight() - 74.0f).withHeight (36.0f);
+}
+
+void RatchetPage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawPanel (g, r, colours::violet, "SPECTRAL RATCHET");
+    const bool freezing = proc.meters.ratchetFreezing.load();
+
+    // What it plays now: frozen spectrum in violet, passing sound in grey.
+    auto area = r.withWidth (560.0f).reduced (24.0f, 34.0f).withTrimmedBottom (62.0f);
+    const int n = SpectralRatchet::numBands;
+    const float w = area.getWidth() / (float) n;
+    for (int b = 0; b < n; ++b)
+    {
+        const float v = proc.meters.ratchetBands[(size_t) b].load();
+        auto bar = juce::Rectangle<float> (area.getX() + w * (float) b, area.getBottom() - v * area.getHeight(),
+                                           w - 2.0f, v * area.getHeight());
+        g.setColour (freezing ? colours::violet.withAlpha (0.85f) : colours::dim.withAlpha (0.6f));
+        g.fillRoundedRectangle (bar, 1.5f);
+    }
+    g.setColour (colours::dim);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText (freezing ? "frozen" : "passing", area.withHeight (14.0f), juce::Justification::topRight);
+
+    // Steps: click to switch between freeze (filled) and pass.
+    const int count = (int) proc.apvts.getRawParameterValue (params::ratchetSteps)->load();
+    const auto pattern = proc.getRatchetPattern();
+    const int playing = proc.meters.ratchetStep.load();
+    const auto row = stepArea();
+    const float sw = row.getWidth() / 16.0f;
+    for (int i = 0; i < 16; ++i)
+    {
+        auto cell = juce::Rectangle<float> (row.getX() + sw * (float) i, row.getY(), sw, row.getHeight()).reduced (2.0f, 0.0f);
+        const bool on = ((pattern >> i) & 1u) != 0;
+        const bool active = i < count;
+        g.setColour (on ? colours::violet.withAlpha (active ? 0.8f : 0.25f) : colours::panelLight.withAlpha (active ? 1.0f : 0.4f));
+        g.fillRoundedRectangle (cell, 3.0f);
+        if (i == playing)
+        {
+            g.setColour (colours::text);
+            g.drawRoundedRectangle (cell, 3.0f, 2.0f);
+        }
+    }
+    g.setColour (colours::dim);
+    g.drawText ("filled = freeze, empty = pass (click to change)", row.translated (0.0f, row.getHeight() + 2.0f).withHeight (14.0f),
+                juce::Justification::centredLeft);
+}
+
+void RatchetPage::mouseDown (const juce::MouseEvent& e)
+{
+    const auto row = stepArea();
+    if (! row.contains (e.position)) return;
+    proc.toggleRatchetStep ((int) ((e.position.x - row.getX()) / (row.getWidth() / 16.0f)));
+    repaint();
+}
+
+void RatchetPage::resized()
+{
+    auto r = getLocalBounds().withTrimmedLeft (576).reduced (12, 30);
+    for (int row = 0; row < 2; ++row)
+    {
+        auto line = r.removeFromTop (46);
+        Choice* left = row == 0 ? &rate : &scale;
+        Choice* right = row == 0 ? &interval : &mask;
+        left->setBounds (line.removeFromLeft (line.getWidth() / 2).reduced (4, 0));
+        right->setBounds (line.reduced (4, 0));
+        r.removeFromTop (6);
+    }
+    const int kw = r.getWidth() / 4;
+    juce::Component* knobs[] = { &steps, &smear, &tilt, &mix };
+    const int kh = std::min (r.getHeight(), 112);
+    for (int i = 0; i < 4; ++i) knobs[i]->setBounds (r.getX() + i * kw, r.getY() + (r.getHeight() - kh) / 2, kw, kh);
+}
+
+//==============================================================================
 GateRing::GateRing (OriginPsyProcessor& p, int b) : proc (p), band (b) {}
 
 void GateRing::paint (juce::Graphics& g)
@@ -1233,7 +1327,7 @@ void SlotCard::mouseUp (const juce::MouseEvent&) { onSelect (moduleType()); }
 //==============================================================================
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
-      echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), tapePage (p), fraza (p), modStrip (p), presetBar (p),
+      echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), tapePage (p), ratchetPage (p), fraza (p), modStrip (p), presetBar (p),
       output (p.apvts, params::outGain, "Output", colours::cyan, true)
 {
     setLookAndFeel (&lnf);
@@ -1248,6 +1342,7 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addChildComponent (zapPage);
     addChildComponent (orbitPage);
     addChildComponent (tapePage);
+    addChildComponent (ratchetPage);
     addAndMakeVisible (fraza);
     addAndMakeVisible (modStrip);
     addAndMakeVisible (presetBar);
@@ -1273,6 +1368,7 @@ void OriginPsyEditor::showModule (int type)
     zapPage.setVisible (type == (int) ModuleType::zapResonator);
     orbitPage.setVisible (type == (int) ModuleType::orbitDoppler);
     tapePage.setVisible (type == (int) ModuleType::tapeStop);
+    ratchetPage.setVisible (type == (int) ModuleType::spectralRatchet);
     for (auto& c : cards)
     {
         c->selected = c->moduleType() == type;
@@ -1312,7 +1408,7 @@ void OriginPsyEditor::resized()
         place (*cards[(size_t) i], { 16 + i * 255, 60, 243, 76 });
     for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
                                 (juce::Component*) &zapPage, (juce::Component*) &orbitPage,
-                                (juce::Component*) &tapePage })
+                                (juce::Component*) &tapePage, (juce::Component*) &ratchetPage })
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
@@ -1331,7 +1427,7 @@ void OriginPsyEditor::timerCallback()
     // Knobs show their modulation live.
     for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
                                 (juce::Component*) &zapPage, (juce::Component*) &orbitPage,
-                                (juce::Component*) &tapePage })
+                                (juce::Component*) &tapePage, (juce::Component*) &ratchetPage })
         if (page->isVisible()) page->repaint();
     if (proc.currentPresetName != presetBar.shownName) presetBar.syncName();
     repaint (getLocalBounds().withHeight (getHeight() * 56 / 790));
