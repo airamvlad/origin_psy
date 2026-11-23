@@ -48,6 +48,7 @@ void OriginPsyProcessor::prepareToPlay (double sr, int samplesPerBlock)
     chain.reset();
     clock.reset();
     outGain.reset (sr, 0.02);
+    limiter.prepare (sr);
     outGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (value (params::outGain)));
     setLatencySamples (0);
 }
@@ -118,6 +119,8 @@ void OriginPsyProcessor::updateModules()
     {
         layout.slots[(size_t) i] = (ModuleType) (int) m (params::slotModule (i));
         layout.bypass[(size_t) i] = m (params::slotBypass (i)) > 0.5f;
+        layout.solo[(size_t) i] = value (params::slotSolo (i)) > 0.5f;
+        chain.setSlotMix (i, m (params::slotMix (i)));
     }
     chain.setLayout (layout);
 
@@ -248,6 +251,18 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         const float g = outGain.getNextValue();
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             buffer.getWritePointer (ch)[n] *= g;
+    }
+
+    if (value (params::outLimit) > 0.5f)
+    {
+        limiter.process (buffer.getWritePointer (0), buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr,
+                         numSamples, value (params::outCeiling));
+        meters.limiterDb = limiter.getReductionDb();
+    }
+    else
+    {
+        limiter.reset();
+        meters.limiterDb = 0.0f;
     }
 
     meters.vokalNote = chain.vokal.getDetectedNote();

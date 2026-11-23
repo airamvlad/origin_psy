@@ -3,6 +3,7 @@
 #include "Parameters.h"
 #include "dsp/Chain.h"
 #include "dsp/Fraza.h"
+#include "dsp/Limiter.h"
 #include "dsp/Modulation.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -68,6 +69,7 @@ public:
         std::atomic<double> frazaPosition { 0.0 };
         std::atomic<float> frazaValue { 0.0f };
         std::atomic<double> bpm { 140.0 };
+        std::atomic<float> limiterDb { 0.0f };
         std::atomic<bool> hostPlaying { false };
         std::array<std::atomic<float>, originpsy::numModSources> source {};
     } meters;
@@ -106,6 +108,7 @@ private:
     juce::SmoothedValue<float> outGain;
     std::vector<float> monoScratch;
     originpsy::EnvelopeFollower envelope;
+    originpsy::Limiter limiter;
     std::vector<juce::RangedAudioParameter*> modParams;
     std::unordered_map<juce::String, int> modIndex;
     std::unique_ptr<std::atomic<float>[]> modNorm;

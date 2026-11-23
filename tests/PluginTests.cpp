@@ -66,7 +66,7 @@ void parameters()
 {
     OriginPsyProcessor p;
     const auto& all = p.getParameters();
-    check (all.size() >= 109, "all module parameters are exposed to the host");
+    check (all.size() >= 119, "all module parameters are exposed to the host");
     juce::StringArray ids;
     for (auto* prm : all)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
@@ -111,6 +111,70 @@ void emptyChainIsTransparent()
         err = std::max (err, (double) std::abs (out[i] - v));
     }
     check (err < 1.0e-5, "empty chain with 0 dB output is a null test");
+}
+
+/** Peak of a run after the first half second (filters and smoothers settled). */
+float settledPeak (const std::vector<float>& v)
+{
+    float m = 0.0f;
+    for (size_t i = 24000; i < v.size(); ++i) m = std::max (m, std::abs (v[i]));
+    return m;
+}
+
+void slotMixSoloAndLimiter()
+{
+    // Dry/Wet 0 on every slot turns the full chain into a null test.
+    {
+        OriginPsyProcessor p;
+        p.applyDropPreset();
+        for (int i = 0; i < Chain::numSlots; ++i) setValue (p, params::slotMix (i), 0.0f);
+        p.prepareToPlay (48000.0, 256);
+        const auto out = run (p, 48000.0, 256, 48000);
+        double phase = 0.0, err = 0.0;
+        for (size_t i = 0; i < out.size(); ++i)
+        {
+            const float v = 0.5f * (float) (2.0 * phase - 1.0);
+            phase += 110.0 / 48000.0;
+            phase -= std::floor (phase);
+            if (i > 4800) err = std::max (err, (double) std::abs (out[i] - v));
+        }
+        check (err < 1.0e-4, "slot Dry/Wet at 0 passes the dry signal");
+    }
+
+    // Solo on one slot sounds the same as that slot alone in the chain.
+    {
+        OriginPsyProcessor solo, plain;
+        solo.applyDropPreset();
+        plain.applyDropPreset();
+        int usedSlot = -1;
+        for (int i = 0; i < Chain::numSlots && usedSlot < 0; ++i)
+            if ((int) solo.apvts.getRawParameterValue (params::slotModule (i))->load() != 0) usedSlot = i;
+        check (usedSlot >= 0, "Drop uses a slot");
+        setValue (solo, params::slotSolo (usedSlot), 1.0f);
+        for (int i = 0; i < Chain::numSlots; ++i)
+            if (i != usedSlot) setValue (plain, params::slotModule (i), 0.0f);
+        solo.prepareToPlay (48000.0, 256);
+        plain.prepareToPlay (48000.0, 256);
+        const auto a = run (solo, 48000.0, 256, 48000);
+        const auto b = run (plain, 48000.0, 256, 48000);
+        double err = 0.0;
+        for (size_t i = 0; i < a.size(); ++i) err = std::max (err, (double) std::abs (a[i] - b[i]));
+        check (err < 1.0e-4, "Solo plays only the soloed slot");
+    }
+
+    // The limiter keeps a +12 dB output under the ceiling; off, it passes.
+    for (bool limit : { true, false })
+    {
+        OriginPsyProcessor p;
+        for (int i = 0; i < Chain::numSlots; ++i) setValue (p, params::slotModule (i), 0.0f);
+        setValue (p, params::outGain, 12.0f);
+        setValue (p, params::outLimit, limit ? 1.0f : 0.0f);
+        setValue (p, params::outCeiling, -1.0f);
+        p.prepareToPlay (48000.0, 256);
+        const auto peak = settledPeak (run (p, 48000.0, 256, 48000));
+        if (limit) check (peak <= std::pow (10.0f, -1.0f / 20.0f) + 1.0e-5f, "the limiter holds the ceiling");
+        else check (peak > 1.5f, "with the limiter off the output is not limited");
+    }
 }
 
 void allModulesAndFraza()
@@ -317,6 +381,7 @@ int main (int argc, char** argv)
     parameters();
     sampleRatesAndBlocks();
     emptyChainIsTransparent();
+    slotMixSoloAndLimiter();
     allModulesAndFraza();
     state();
     modulation();

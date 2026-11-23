@@ -294,8 +294,11 @@ private:
     int slot;
     std::function<void (int)> onSelect;
     juce::ComboBox module;
-    juce::ToggleButton bypass { "ON" };
+    juce::ToggleButton bypass { "ON" }, solo { "S" };
+    juce::Slider mix;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> moduleAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
 };
 
 } // namespace originpsy::ui
@@ -330,6 +333,8 @@ private:
     originpsy::ui::ModStrip modStrip;
     originpsy::ui::PresetBar presetBar;
     originpsy::ui::Knob output;
+    juce::ToggleButton limit { "LIMIT" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> limitAttachment;
     juce::TooltipWindow tooltips { this, 700 };
     int shownModule = 1;
 
