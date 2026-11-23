@@ -54,7 +54,7 @@ if(ORIGINPSY_BUILD_PLUGIN)
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_DISPLAY_SPLASH_SCREEN=0)
 
-    # The UI text is UTF-8 (č, ć, š, ž, đ).
+    # Source files are UTF-8 (the UI uses a few symbols such as arrows).
     if(MSVC)
         target_compile_options(OriginPsy PRIVATE /utf-8)
     endif()
