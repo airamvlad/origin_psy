@@ -49,7 +49,8 @@ void OriginPsyProcessor::prepareToPlay (double sr, int samplesPerBlock)
     clock.reset();
     outGain.reset (sr, 0.02);
     outGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (value (params::outGain)));
-    setLatencySamples (0);
+    wantedLatency = Chain::latencyOf (chain.activeLayout());
+    setLatencySamples (wantedLatency.load());
 }
 
 Transport OriginPsyProcessor::readTransport (int numSamples)
@@ -202,6 +203,27 @@ void OriginPsyProcessor::updateModules()
     tp.curve = m (params::tapeCurve);
     tp.mix = m (params::tapeMix);
     chain.tape.setParams (tp);
+
+    // Spectral Ratchet.
+    SpectralRatchet::Params rp;
+    rp.division = (int) m (params::ratchetRate);
+    rp.steps = (int) m (params::ratchetSteps);
+    rp.pattern = ratchetPattern.load();
+    rp.interval = (int) m (params::ratchetInterval);
+    rp.scale = (int) m (params::ratchetScale);
+    rp.mask = (int) m (params::ratchetMask);
+    rp.smear = m (params::ratchetSmear);
+    rp.tilt = m (params::ratchetTilt);
+    rp.mix = m (params::ratchetMix);
+    chain.ratchet.setParams (rp);
+
+    // Latency follows the layout (Spectral Ratchet adds 2048 samples).
+    const int latency = Chain::latencyOf (layout);
+    if (latency != wantedLatency.load())
+    {
+        wantedLatency = latency;
+        triggerAsyncUpdate();
+    }
 }
 
 void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -255,6 +277,10 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.vokalAccent = chain.vokal.getAccent();
     for (int b = 0; b < 3; ++b) meters.gateStep[(size_t) b] = chain.gate.getStep (b);
     meters.tapeSpeed = chain.tape.getSpeed();
+    meters.ratchetStep = chain.ratchet.getStep();
+    meters.ratchetFreezing = chain.ratchet.isFreezing();
+    for (size_t b = 0; b < meters.ratchetBands.size(); ++b)
+        meters.ratchetBands[b].store (chain.ratchet.getBands()[b], std::memory_order_relaxed);
     meters.zapNote = chain.zap.getLastNote();
     meters.zapHits = chain.zap.getHitCount();
     meters.zapLevel = chain.zap.getLevel();
@@ -319,6 +345,7 @@ juce::ValueTree OriginPsyProcessor::createStateTree()
     auto state = apvts.copyState();
     for (int b = 0; b < 3; ++b)
         state.setProperty ("gate_pattern_" + juce::String (b + 1), (juce::int64) gatePatterns[(size_t) b].load(), nullptr);
+    state.setProperty ("ratchet_pattern", (juce::int64) ratchetPattern.load(), nullptr);
     state.setProperty ("version", JucePlugin_VersionString, nullptr);
     state.setProperty ("preset_name", currentPresetName, nullptr);
 
@@ -352,6 +379,8 @@ void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
         if (state.hasProperty (key))
             gatePatterns[(size_t) b] = (uint32_t) (juce::int64) state.getProperty (key);
     }
+    if (state.hasProperty ("ratchet_pattern"))
+        ratchetPattern = (uint32_t) (juce::int64) state.getProperty ("ratchet_pattern") & 0xffffu;
     currentPresetName = state.getProperty ("preset_name", "Init").toString();
 
     matrix.clearAll();
