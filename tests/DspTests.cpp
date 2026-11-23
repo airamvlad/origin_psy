@@ -327,6 +327,268 @@ void performanceTest()
     const double load = elapsed / (double) seconds * 100.0;
     std::printf ("CPU: all three modules = %.2f %% of one core at 48 kHz\n", load);
     check (allFinite (l), "full chain output is finite");
+
+    Chain c2;
+    c2.prepare (sr, 256);
+    Chain::Layout two;
+    two.slots = { ModuleType::zapResonator, ModuleType::orbitDoppler, ModuleType::empty, ModuleType::empty };
+    c2.setLayout (two);
+    c2.reset();
+    auto l2 = saw (110.0, (size_t) sr * seconds), r2 = l2;
+    for (size_t i = 0; i < l2.size(); i += 6000) l2[i] = r2[i] = 1.0f; // 1/16 hits at 120 BPM
+    const auto start2 = std::chrono::steady_clock::now();
+    run (c2, l2, r2, 145.0);
+    const double elapsed2 = std::chrono::duration<double> (std::chrono::steady_clock::now() - start2).count();
+    std::printf ("CPU: Zap Resonator + Orbit Doppler = %.2f %% of one core at 48 kHz\n", elapsed2 / (double) seconds * 100.0);
+    check (allFinite (l2) && allFinite (r2), "zap and orbit chain output is finite");
+}
+
+void zapTests()
+{
+    ZapResonator z;
+    z.prepare (sr, 256);
+    ZapResonator::Params p;
+    p.mix = 1.0f;   // zaps only
+    p.order = ZapResonator::up;
+    z.setParams (p);
+
+    // Clicks every 1/8 at 120 BPM (12000 samples apart).
+    const size_t len = (size_t) sr * 2;
+    std::vector<float> l (len, 0.0f);
+    for (size_t i = 1000; i < len; i += 12000)
+        for (size_t k = 0; k < 40 && i + k < len; ++k) l[i + k] = 0.8f * (float) std::exp (-(double) k / 8.0);
+    auto r = l;
+    std::vector<float> silenceL (len, 0.0f), silenceR (len, 0.0f);
+    run (z, l, r, 120.0);
+    check (allFinite (l) && allFinite (r), "zap output is finite");
+    check (z.getHitCount() == 8, "every click fires one zap");
+    check (rms (l, 13000 + 2400, 13000 + 4800) > 0.01, "a zap rings after the hit");
+    const int last = z.getLastNote();
+    bool inScale = false;
+    for (int i = 0; i < ZapResonator::notesInRange (p); ++i) inScale = inScale || ZapResonator::noteForStep (p, i) == last;
+    check (inScale, "zaps land on scale notes");
+    check (ZapResonator::noteForStep (p, 7) == ZapResonator::noteForStep (p, 0) + 12, "seven steps up is an octave");
+
+    // Fast hats: 1/16 at 145 BPM, every one fires.
+    z.reset();
+    std::vector<float> hl (len, 0.0f);
+    int expected = 0;
+    for (size_t i = 500; i < len; i += 4966, ++expected)
+        for (size_t k = 0; k < 120 && i + k < len; ++k)
+            hl[i + k] = 0.5f * (float) std::exp (-(double) k / 30.0) * (k % 2 == 0 ? 1.0f : -1.0f);
+    auto hr = hl;
+    run (z, hl, hr, 145.0);
+    check ((int) z.getHitCount() == expected, "fast 1/16 hats all fire");
+
+    z.reset();
+    run (z, silenceL, silenceR, 120.0);
+    check (z.getHitCount() == 0 && rms (silenceL, 0, len) < 1.0e-6, "silence fires no zaps");
+
+    // Sustained saw with no hits: at most the first edge triggers.
+    z.reset();
+    auto sl = saw (110.0, len), sr2 = sl;
+    run (z, sl, sr2, 120.0);
+    check (z.getHitCount() <= 1, "a steady sound does not keep firing");
+
+    // Mix 0 is a null test.
+    ZapResonator n;
+    n.prepare (sr, 256);
+    p.mix = 0.0f;
+    n.setParams (p);
+    n.reset();
+    auto a = saw (220.0, len), b = a, ref = a;
+    for (size_t i = 0; i < len; i += 9000) a[i] = b[i] = ref[i] = 1.0f;
+    run (n, a, b, 140.0);
+    double err = 0.0;
+    for (size_t i = 0; i < len; ++i) err = std::max (err, (double) std::abs (a[i] - ref[i]));
+    check (err < 1.0e-6, "zap with mix 0 is a null test");
+
+    // Extreme settings stay bounded.
+    ZapResonator x;
+    x.prepare (sr, 256);
+    p = {};
+    p.sweep = 48.0f; p.sweepMs = 5.0f; p.decayMs = 2000.0f; p.resonance = 0.0f; p.thresholdDb = -60.0f; p.mix = 1.0f;
+    x.setParams (p);
+    x.reset();
+    auto nl = saw (3000.0, len, 1.0f), nr = nl;
+    for (size_t i = 0; i < len; i += 2000) nl[i] = nr[i] = 1.0f;
+    run (x, nl, nr, 175.0, 64);
+    check (allFinite (nl) && allFinite (nr), "zap stays bounded at extreme settings");
+}
+
+/** Zero crossings per second in part of a signal. */
+double crossingRate (const std::vector<float>& v, size_t from, size_t to)
+{
+    int count = 0;
+    for (size_t i = from + 1; i < to; ++i)
+        if ((v[i - 1] < 0.0f) != (v[i] < 0.0f)) ++count;
+    return count * 0.5 * sr / (double) (to - from);
+}
+
+void orbitTests()
+{
+    // Circle path: phase 0..0.5 comes closer, 0.5..1 moves away.
+    OrbitDoppler o;
+    o.prepare (sr, 256);
+    OrbitDoppler::Params p;
+    p.path = OrbitDoppler::circle;
+    p.rate = 6;          // 1 bar = 2 s at 120 BPM
+    p.radius = 20.0f;
+    p.doppler = 1.0f;
+    p.mix = 1.0f;
+    o.setParams (p);
+    o.reset();
+    const size_t lap = (size_t) sr * 2;
+    auto l = sine (1000.0, lap), r = l;
+    run (o, l, r, 120.0);
+    check (allFinite (l) && allFinite (r), "orbit output is finite");
+    const double closer = crossingRate (l, lap * 20 / 100, lap * 30 / 100);
+    const double away = crossingRate (l, lap * 70 / 100, lap * 80 / 100);
+    check (closer > 1010.0, "pitch rises while the sound comes closer");
+    check (away < 990.0, "pitch falls while the sound moves away");
+    check (rms (r, lap * 22 / 100, lap * 28 / 100) > rms (l, lap * 22 / 100, lap * 28 / 100) * 1.5,
+           "a quarter of the way round the sound is on the right");
+    check (rms (l, lap * 72 / 100, lap * 78 / 100) > rms (r, lap * 72 / 100, lap * 78 / 100) * 1.5,
+           "three quarters of the way round it is on the left");
+
+    // No Doppler: the pitch stays put.
+    OrbitDoppler still;
+    still.prepare (sr, 256);
+    p.doppler = 0.0f;
+    still.setParams (p);
+    still.reset();
+    auto sl = sine (1000.0, lap), sr2 = sl;
+    run (still, sl, sr2, 120.0);
+    check (std::abs (crossingRate (sl, lap * 20 / 100, lap * 30 / 100) - 1000.0) < 8.0, "Doppler 0 keeps the pitch");
+
+    // Mix 0 is a null test; every path stays bounded.
+    for (int path = 0; path < OrbitDoppler::numPaths; ++path)
+    {
+        OrbitDoppler n;
+        n.prepare (sr, 256);
+        p.path = path;
+        p.radius = 30.0f;
+        p.doppler = 1.0f;
+        p.rate = 0;      // 1/16: as fast as it goes
+        p.mix = 1.0f;
+        n.setParams (p);
+        n.reset();
+        auto a = saw (220.0, lap), b = a;
+        run (n, a, b, 180.0, 37);
+        check (allFinite (a) && allFinite (b), "every orbit path stays bounded");
+    }
+    OrbitDoppler n;
+    n.prepare (sr, 256);
+    p.mix = 0.0f;
+    n.setParams (p);
+    n.reset();
+    auto a = saw (220.0, lap), b = a, ref = a;
+    run (n, a, b, 140.0);
+    double err = 0.0;
+    for (size_t i = 0; i < lap; ++i) err = std::max (err, (double) std::abs (a[i] - ref[i]));
+    check (err < 1.0e-6, "orbit with mix 0 is a null test");
+}
+
+void tapeTests()
+{
+    // Manual brake, Stop mode, 1/2 note (1 s at 120 BPM).
+    TapeStop t;
+    t.prepare (sr, 256);
+    TapeStop::Params p;
+    p.mode = TapeStop::stop;
+    p.length = 3;
+    t.setParams (p);
+    t.reset();
+    const size_t sec = (size_t) sr;
+    auto l = sine (1000.0, sec * 4), r = l;
+    const auto ref = l;
+    auto runSpan = [&] (size_t from, size_t to) {
+        for (size_t s = from; s < to; s += 256)
+        {
+            const int n = (int) std::min<size_t> (256, to - s);
+            t.process (l.data() + s, r.data() + s, n, transportAt (120.0, 0.0));
+        }
+    };
+    runSpan (0, sec / 2);
+    p.brake = true;
+    t.setParams (p);
+    runSpan (sec / 2, sec * 2);
+    const double slowing = crossingRate (l, sec * 6 / 10, sec * 9 / 10);
+    check (slowing < 900.0 && slowing > 200.0, "braking lowers the pitch");
+    check (rms (l, sec * 16 / 10, sec * 2) < 1.0e-3, "after the slow down the tape is stopped");
+    check (t.getSpeed() < 0.01f, "speed reaches zero");
+    p.brake = false;
+    t.setParams (p);
+    runSpan (sec * 2, sec * 4);
+    double err = 0.0;
+    for (size_t i = sec * 2 + (size_t) (0.03 * sr); i < sec * 4; ++i) err = std::max (err, (double) std::abs (l[i] - ref[i]));
+    check (err < 1.0e-6, "letting go of the brake goes straight back to the live sound");
+
+    // Slow Down holds at half speed: one octave down.
+    TapeStop h;
+    h.prepare (sr, 256);
+    p = {};
+    p.mode = TapeStop::slowDown;
+    p.length = 2;   // 1/4 = 0.5 s
+    p.brake = true;
+    h.setParams (p);
+    h.reset();
+    auto hl = sine (1000.0, sec * 2), hr = hl;
+    run (h, hl, hr, 120.0);
+    check (std::abs (crossingRate (hl, sec, sec * 2) - 500.0) < 10.0, "Slow Down holds an octave lower");
+    check (allFinite (hl), "slow down output is finite");
+
+    // Every 2 bars: stopped just before the bar line, live again after it.
+    TapeStop a;
+    a.prepare (sr, 256);
+    p = {};
+    p.mode = TapeStop::stop;
+    p.trigger = TapeStop::every2;
+    p.length = 3;   // 1/2 note
+    a.setParams (p);
+    a.reset();
+    check (! TapeStop::autoEngaged (p, 5.0, 4.0) && TapeStop::autoEngaged (p, 7.0, 4.0), "auto trigger fires in the last half note of 2 bars");
+    check (! TapeStop::autoEngaged (p, 8.1, 4.0), "auto trigger lets go on the bar line");
+    auto al = sine (1000.0, sec * 5), ar = al;   // 2 bars = 4 s at 120 BPM
+    const auto aref = al;
+    run (a, al, ar, 120.0);
+    check (crossingRate (al, sec * 38 / 10, sec * 4) < 450.0, "the tape has nearly stopped at the end of bar 2");
+    double aerr = 0.0;
+    for (size_t i = sec * 4 + (size_t) (0.03 * sr); i < sec * 5; ++i) aerr = std::max (aerr, (double) std::abs (al[i] - aref[i]));
+    check (aerr < 1.0e-6, "the next bar starts live");
+
+    // Start mode spins up from a stop.
+    TapeStop st;
+    st.prepare (sr, 256);
+    p = {};
+    p.mode = TapeStop::start;
+    p.length = 3;
+    st.setParams (p);
+    st.reset();
+    auto sl = sine (1000.0, sec * 2), sr2 = sl;
+    for (size_t s = 0; s < sec * 2; s += 256)
+    {
+        if (! p.brake && s >= sec / 2) { p.brake = true; st.setParams (p); }
+        st.process (sl.data() + s, sr2.data() + s, 256, transportAt (120.0, 0.0));
+    }
+    check (crossingRate (sl, sec * 6 / 10, sec * 8 / 10) < 500.0, "Start begins at a low pitch");
+    check (crossingRate (sl, sec * 12 / 10, sec * 14 / 10) > crossingRate (sl, sec * 6 / 10, sec * 8 / 10) + 200.0, "Start spins up");
+    check (std::abs (crossingRate (sl, sec * 17 / 10, sec * 2) - 1000.0) < 10.0, "after spinning up the pitch is normal");
+    check (allFinite (sl), "start output is finite");
+
+    // Mix 0 is a null test.
+    TapeStop n;
+    n.prepare (sr, 256);
+    p = {};
+    p.mix = 0.0f;
+    p.brake = true;
+    n.setParams (p);
+    n.reset();
+    auto nl = saw (220.0, sec), nr = nl, nref = nl;
+    run (n, nl, nr, 140.0);
+    double nerr = 0.0;
+    for (size_t i = 0; i < sec; ++i) nerr = std::max (nerr, (double) std::abs (nl[i] - nref[i]));
+    check (nerr < 1.0e-6, "tape stop with mix 0 is a null test");
 }
 
 void modulationTests()
@@ -365,6 +627,26 @@ void modulationTests()
     m.clearAll();
     check (! m.get (0).used() && near (m.offsetFor (3, values), 0.0, 1e-9), "clear all removes every connection");
 
+    // Direction: LFOs start bipolar, the other sources one way.
+    ModMatrix d;
+    const int lfoSlot = d.connect (ModSource::lfo1, 1, 0.5f);
+    const int envSlot = d.connect (ModSource::envelope, 2, 0.5f);
+    check (d.get (lfoSlot).bipolar && ! d.get (envSlot).bipolar, "LFOs start bipolar, other sources one way");
+    std::array<float, numModSources> v {};
+    v[(size_t) ModSource::lfo1] = -1.0f;
+    v[(size_t) ModSource::envelope] = 0.0f;
+    check (near (d.offsetFor (1, v), -0.5, 1e-6), "bipolar LFO swings below the knob");
+    d.setBipolar (lfoSlot, false);
+    check (near (d.offsetFor (1, v), 0.0, 1e-6), "one-way LFO stays at the knob at its low point");
+    v[(size_t) ModSource::lfo1] = 1.0f;
+    check (near (d.offsetFor (1, v), 0.5, 1e-6), "one-way LFO reaches the full depth at its high point");
+    d.setBipolar (envSlot, true);
+    check (near (d.offsetFor (2, v), -0.5, 1e-6), "bipolar envelope swings below the knob when quiet");
+    d.setDepth (envSlot, -0.5f);
+    d.setBipolar (envSlot, false);
+    v[(size_t) ModSource::envelope] = 1.0f;
+    check (near (d.offsetFor (2, v), -0.5, 1e-6), "one-way down goes below the knob");
+
     EnvelopeFollower env;
     env.prepare (sr);
     std::vector<float> loud ((size_t) sr / 10, 1.0f), quiet ((size_t) sr, 0.0f);
@@ -385,6 +667,9 @@ int main()
     gateTests();
     chainTests();
     modulationTests();
+    zapTests();
+    orbitTests();
+    tapeTests();
     performanceTest();
 
     if (failures == 0) std::printf ("All DSP tests passed.\n");

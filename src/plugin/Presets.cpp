@@ -97,6 +97,47 @@ const std::vector<PresetManager::Factory>& PresetManager::factoryPresets()
               macros (p);
           } },
 
+        { "Laser Hats", "Glitch", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::zapResonator, ModuleType::fraktalEcho, ModuleType::empty);
+              set (p, params::zapThreshold, -36.0f);
+              set (p, params::zapOrder, 2.0f);        // random
+              set (p, params::zapSweep, 30.0f);
+              set (p, params::zapSweepTime, 60.0f);
+              set (p, params::zapDecay, 220.0f);
+              set (p, params::zapMix, 0.45f);
+              set (p, params::echoTime, 3.0f);        // 1/16D
+              set (p, params::echoMix, 0.25f);
+              macros (p);
+              connect (p, ModSource::lfo2, params::zapSweep, 0.15f);
+          } },
+
+        { "Zap Rain", "Lead FX", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::zapResonator, ModuleType::orbitDoppler, ModuleType::fraktalEcho);
+              set (p, params::zapScale, 1.0f);        // Hijaz
+              set (p, params::zapSweep, -24.0f);      // rises onto the note
+              set (p, params::zapSweepTime, 150.0f);
+              set (p, params::zapDecay, 600.0f);
+              set (p, params::zapResonance, 1.0f);
+              set (p, params::zapMix, 0.5f);
+              set (p, params::orbitPath, 2.0f);       // spiral
+              set (p, params::orbitRate, 8.0f);       // 4 bars
+              set (p, params::orbitMix, 0.7f);
+              set (p, params::echoMix, 0.3f);
+              macros (p);
+          } },
+
+        { "Orbit Fly-by", "Lead FX", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::orbitDoppler, ModuleType::fraktalEcho, ModuleType::empty);
+              set (p, params::orbitPath, 3.0f);       // fly-by
+              set (p, params::orbitRate, 7.0f);       // 2 bars
+              set (p, params::orbitRadius, 12.0f);
+              set (p, params::orbitDoppler, 0.7f);
+              set (p, params::orbitMix, 1.0f);
+              set (p, params::echoMix, 0.2f);
+              macros (p);
+              connect (p, ModSource::macro4, params::orbitDoppler, 0.3f);
+          } },
+
         { "Polymeter Pad", "Pads", [] (OriginPsyProcessor& p) {
               slots (p, ModuleType::polimetarGate, ModuleType::fraktalEcho, ModuleType::empty);
               set (p, params::gateBand (0, "depth"), 0.3f);
@@ -133,6 +174,16 @@ const std::vector<PresetManager::Factory>& PresetManager::factoryPresets()
               set (p, params::echoSpread, 3.0f);
               macros (p);
               connect (p, ModSource::fraza, params::gateBand (2, "length"), -0.4f);
+          } },
+
+        { "Tape Drop 8", "Build-up", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::fraktalEcho, ModuleType::tapeStop, ModuleType::empty);
+              set (p, params::tapeMode, 0.0f);        // stop
+              set (p, params::tapeTrigger, 3.0f);     // every 8 bars
+              set (p, params::tapeLength, 4.0f);      // 1 bar
+              set (p, params::tapeCurve, 0.65f);
+              set (p, params::echoMix, 0.2f);
+              macros (p);
           } },
 
         { "Long Rise 32", "Build-up", [] (OriginPsyProcessor& p) {

@@ -35,6 +35,33 @@ inline const juce::String gateHigh = "gate_high_hz";
 inline const juce::String gateMix = "gate_mix";
 inline juce::String gateBand (int band, const char* name) { return "gate_b" + juce::String (band + 1) + "_" + name; }
 
+inline const juce::String zapThreshold = "zap_threshold";
+inline const juce::String zapScale = "zap_scale";
+inline const juce::String zapRoot = "zap_root";
+inline const juce::String zapOctave = "zap_octave";
+inline const juce::String zapOrder = "zap_order";
+inline const juce::String zapSweep = "zap_sweep";
+inline const juce::String zapSweepTime = "zap_sweep_time";
+inline const juce::String zapDecay = "zap_decay";
+inline const juce::String zapResonance = "zap_resonance";
+inline const juce::String zapWidth = "zap_width";
+inline const juce::String zapMix = "zap_mix";
+
+inline const juce::String orbitPath = "orbit_path";
+inline const juce::String orbitRate = "orbit_rate";
+inline const juce::String orbitRadius = "orbit_radius";
+inline const juce::String orbitDoppler = "orbit_doppler";
+inline const juce::String orbitTone = "orbit_tone";
+inline const juce::String orbitWidth = "orbit_width";
+inline const juce::String orbitMix = "orbit_mix";
+
+inline const juce::String tapeMode = "tape_mode";
+inline const juce::String tapeTrigger = "tape_trigger";
+inline const juce::String tapeBrake = "tape_brake";
+inline const juce::String tapeLength = "tape_length";
+inline const juce::String tapeCurve = "tape_curve";
+inline const juce::String tapeMix = "tape_mix";
+
 inline juce::String lfoRate (int i) { return "lfo" + juce::String (i + 1) + "_rate"; }
 inline juce::String lfoShape (int i) { return "lfo" + juce::String (i + 1) + "_shape"; }
 inline juce::String macro (int i) { return "macro" + juce::String (i + 1); }
@@ -69,6 +96,9 @@ juce::StringArray moduleNames();
 juce::StringArray frazaCurveNames();
 juce::StringArray lfoRateNames();
 juce::StringArray lfoShapeNames();
+juce::StringArray noteNames();
+juce::StringArray zapOrderNames();
+juce::StringArray orbitPathNames();
 
 /** Parameters that the modulation matrix may not target (the output level,
     the macros themselves and the Fraza amounts). */

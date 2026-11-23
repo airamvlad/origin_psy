@@ -12,6 +12,9 @@ juce::Colour moduleColour (int type)
         case ModuleType::fraktalEcho:   return colours::cyan;
         case ModuleType::vokalAcid:     return colours::magenta;
         case ModuleType::polimetarGate: return colours::amber;
+        case ModuleType::zapResonator:  return colours::lime;
+        case ModuleType::orbitDoppler:  return colours::blue;
+        case ModuleType::tapeStop:      return colours::orange;
         case ModuleType::empty:         break;
     }
     return colours::dim;
@@ -139,16 +142,28 @@ void ModSlider::mouseDown (const juce::MouseEvent& e)
         {
             const auto slot = p->matrix.get (i);
             const juce::String name = modSourceName (slot.source);
-            const juce::String depth = (slot.depth > 0 ? "+" : "") + juce::String (juce::roundToInt (slot.depth * 100.0f)) + " %";
+            const juce::String depth = juce::String (juce::roundToInt (std::abs (slot.depth) * 100.0f)) + " %";
             menu.addSectionHeader (name + "  " + depth);
-            menu.addItem (1000 + i, "Invert " + name);
-            menu.addItem (2000 + i, "Remove " + name);
+            const bool down = slot.depth < 0.0f;
+            menu.addItem (1000 + i * 10, "Up", true, ! slot.bipolar && ! down);
+            menu.addItem (1001 + i * 10, "Down", true, ! slot.bipolar && down);
+            menu.addItem (1002 + i * 10, "Both ways", true, slot.bipolar && ! down);
+            menu.addItem (1003 + i * 10, "Both ways, inverted", true, slot.bipolar && down);
+            menu.addItem (1004 + i * 10, "Remove " + name);
         }
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                             [p, safe = juce::Component::SafePointer<ModSlider> (this)] (int result) {
-                                if (result >= 2000) p->matrix.clear (result - 2000);
-                                else if (result >= 1000)
-                                    p->matrix.setDepth (result - 1000, -p->matrix.get (result - 1000).depth);
+                                if (result < 1000) return;
+                                const int i = (result - 1000) / 10, action = (result - 1000) % 10;
+                                const float amount = std::max (0.01f, std::abs (p->matrix.get (i).depth));
+                                switch (action)
+                                {
+                                    case 0: p->matrix.setBipolar (i, false); p->matrix.setDepth (i, amount); break;
+                                    case 1: p->matrix.setBipolar (i, false); p->matrix.setDepth (i, -amount); break;
+                                    case 2: p->matrix.setBipolar (i, true); p->matrix.setDepth (i, amount); break;
+                                    case 3: p->matrix.setBipolar (i, true); p->matrix.setDepth (i, -amount); break;
+                                    default: p->matrix.clear (i); break;
+                                }
                                 if (safe != nullptr && safe->getParentComponent() != nullptr)
                                     safe->getParentComponent()->repaint();
                             });
@@ -278,8 +293,8 @@ void Knob::paintOverChildren (juce::Graphics& g)
         const auto slot = p->matrix.get (i);
         if (! slot.used() || slot.destination != idx) continue;
         any = true;
-        const float lo = isBipolar (slot.source) ? base - std::abs (slot.depth) : std::min (base, base + slot.depth);
-        const float hi = isBipolar (slot.source) ? base + std::abs (slot.depth) : std::max (base, base + slot.depth);
+        const float lo = slot.bipolar ? base - std::abs (slot.depth) : std::min (base, base + slot.depth);
+        const float hi = slot.bipolar ? base + std::abs (slot.depth) : std::max (base, base + slot.depth);
         const float r = radius + 1.5f + 3.0f * (float) ring++;
         juce::Path arc;
         arc.addCentredArc (centre.x, centre.y, r, r, 0.0f, angleOf (lo), angleOf (hi), true);
@@ -506,6 +521,271 @@ void VokalPage::resized()
 }
 
 //==============================================================================
+ZapPage::ZapPage (OriginPsyProcessor& p)
+    : proc (p),
+      scale (p.apvts, params::zapScale, "Scale"),
+      root (p.apvts, params::zapRoot, "Root"),
+      order (p.apvts, params::zapOrder, "Note order"),
+      threshold (p.apvts, params::zapThreshold, "Threshold", colours::lime),
+      octave (p.apvts, params::zapOctave, "Octave", colours::lime),
+      sweep (p.apvts, params::zapSweep, "Sweep", colours::lime),
+      sweepTime (p.apvts, params::zapSweepTime, "Sweep Time", colours::lime),
+      decay (p.apvts, params::zapDecay, "Decay", colours::lime),
+      resonance (p.apvts, params::zapResonance, "Resonance", colours::lime),
+      width (p.apvts, params::zapWidth, "Width", colours::lime),
+      mix (p.apvts, params::zapMix, "Mix", colours::lime)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &scale, &root, &order, &threshold, &octave, &sweep,
+                                                             &sweepTime, &decay, &resonance, &width, &mix })
+        addAndMakeVisible (c);
+}
+
+void ZapPage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawPanel (g, r, colours::lime, "ZAP RESONATOR");
+
+    auto value = [this] (const juce::String& id) { return proc.apvts.getRawParameterValue (id)->load(); };
+    ZapResonator::Params zp;
+    zp.scale = (int) value (params::zapScale);
+    zp.root = (int) value (params::zapRoot);
+    zp.octave = (int) value (params::zapOctave);
+    const float sweepSt = value (params::zapSweep);
+    const float sweepMs = value (params::zapSweepTime), decayMs = value (params::zapDecay);
+
+    const auto hits = proc.meters.zapHits.load();
+    if (hits != lastHits) { lastHits = hits; flash = 1.0f; }
+    else flash *= 0.85f;
+
+    // One zap: pitch glides from the sweep onto the note while it fades.
+    auto area = r.withWidth (560.0f).reduced (24.0f, 34.0f).withTrimmedBottom (54.0f);
+    g.setColour (colours::outline);
+    const float noteY = area.getY() + area.getHeight() * (sweepSt >= 0.0f ? 0.8f : 0.2f);
+    g.drawHorizontalLine ((int) noteY, area.getX(), area.getRight());
+    const float span = std::max (decayMs * 1.2f, 50.0f);
+    juce::Path curve;
+    for (int i = 0; i <= 120; ++i)
+    {
+        const float tMs = span * (float) i / 120.0f;
+        const float pitch = sweepSt * std::exp (-tMs / std::max (1.0f, sweepMs));
+        const float x = area.getX() + area.getWidth() * (float) i / 120.0f;
+        const float y = noteY - pitch / 48.0f * area.getHeight() * 0.75f;
+        if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
+    }
+    g.setColour (colours::lime.withAlpha (0.35f + 0.65f * flash));
+    g.strokePath (curve, juce::PathStrokeType (2.0f + 2.0f * flash));
+    g.setColour (colours::dim);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText (juce::String::fromUTF8 ("time →"), area.withTop (area.getBottom() + 2.0f).withHeight (14.0f), juce::Justification::centredRight);
+    g.drawText ("pitch of one zap", area.withHeight (14.0f).translated (0.0f, -18.0f), juce::Justification::centredRight);
+
+    // The notes zaps land on; the last one lights up.
+    const int count = ZapResonator::notesInRange (zp);
+    const int last = proc.meters.zapNote.load();
+    auto row = r.withWidth (560.0f).reduced (24.0f, 0.0f).withTop (r.getBottom() - 70.0f).withHeight (34.0f);
+    const float w = row.getWidth() / (float) count;
+    for (int i = 0; i < count; ++i)
+    {
+        const int note = ZapResonator::noteForStep (zp, i);
+        auto cell = juce::Rectangle<float> (row.getX() + w * (float) i, row.getY(), w, row.getHeight()).reduced (1.5f, 0.0f);
+        const bool lit = note == last;
+        g.setColour (lit ? colours::lime.withAlpha (0.3f + 0.7f * flash) : colours::panelLight);
+        g.fillRoundedRectangle (cell, 3.0f);
+        g.setColour (lit ? colours::text : colours::dim);
+        g.setFont (juce::FontOptions (w > 22.0f ? 11.0f : 9.0f));
+        g.drawText (noteNames[note % 12] + juce::String (note / 12 - 1), cell, juce::Justification::centred);
+    }
+}
+
+void ZapPage::resized()
+{
+    auto r = getLocalBounds().withTrimmedLeft (576).reduced (12, 30);
+    auto top = r.removeFromTop (46);
+    const int cw = top.getWidth() / 3;
+    scale.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    root.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    order.setBounds (top.reduced (4, 0));
+    r.removeFromTop (8);
+    const int kw = r.getWidth() / 4, kh = r.getHeight() / 2;
+    juce::Component* knobs[] = { &threshold, &octave, &sweep, &sweepTime, &decay, &resonance, &width, &mix };
+    for (int i = 0; i < 8; ++i)
+        knobs[i]->setBounds (r.getX() + (i % 4) * kw, r.getY() + (i / 4) * kh, kw, kh);
+}
+
+//==============================================================================
+OrbitPage::OrbitPage (OriginPsyProcessor& p)
+    : proc (p),
+      path (p.apvts, params::orbitPath, "Path"),
+      rate (p.apvts, params::orbitRate, "One lap"),
+      radius (p.apvts, params::orbitRadius, "Radius", colours::blue),
+      doppler (p.apvts, params::orbitDoppler, "Doppler", colours::blue),
+      tone (p.apvts, params::orbitTone, "Distance Tone", colours::blue),
+      width (p.apvts, params::orbitWidth, "Width", colours::blue),
+      mix (p.apvts, params::orbitMix, "Mix", colours::blue)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &path, &rate, &radius, &doppler, &tone, &width, &mix })
+        addAndMakeVisible (c);
+}
+
+void OrbitPage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawPanel (g, r, colours::blue, "ORBIT DOPPLER");
+
+    // Seen from above: the listener in the middle, facing up.
+    auto area = r.withWidth (560.0f).reduced (24.0f, 30.0f).withTrimmedTop (6.0f);
+    const int pathIndex = (int) proc.apvts.getRawParameterValue (params::orbitPath)->load();
+    const float w = proc.apvts.getRawParameterValue (params::orbitWidth)->load();
+    const float scale = std::min (area.getWidth() / 5.0f, area.getHeight() / 2.8f);
+    const juce::Point<float> head (area.getCentreX(), area.getY() + 1.7f * scale);
+    auto toScreen = [&] (float x, float y) { return juce::Point<float> (head.x + x * w * scale, head.y - y * scale); };
+
+    juce::Path orbit;
+    for (int i = 0; i <= 240; ++i)
+    {
+        const auto pt = OrbitDoppler::pathPoint (pathIndex, i / 240.0);
+        const auto s = toScreen (pt.x, pt.y);
+        if (i == 0) orbit.startNewSubPath (s); else orbit.lineTo (s);
+    }
+    g.setColour (colours::blue.withAlpha (0.35f));
+    g.strokePath (orbit, juce::PathStrokeType (1.5f));
+
+    // Head with ears and nose.
+    g.setColour (colours::panelLight);
+    g.fillEllipse (juce::Rectangle<float> (26.0f, 26.0f).withCentre (head));
+    g.setColour (colours::dim);
+    g.drawEllipse (juce::Rectangle<float> (26.0f, 26.0f).withCentre (head), 1.2f);
+    g.fillEllipse (juce::Rectangle<float> (6.0f, 10.0f).withCentre (head.translated (-14.0f, 0.0f)));
+    g.fillEllipse (juce::Rectangle<float> (6.0f, 10.0f).withCentre (head.translated (14.0f, 0.0f)));
+    juce::Path nose;
+    nose.addTriangle (head.x - 4.0f, head.y - 12.0f, head.x + 4.0f, head.y - 12.0f, head.x, head.y - 19.0f);
+    g.fillPath (nose);
+
+    // The sound, with a short trail.
+    const auto now = toScreen (proc.meters.orbitX.load(), proc.meters.orbitY.load());
+    trail[(size_t) trailPos] = now;
+    trailPos = (trailPos + 1) % (int) trail.size();
+    for (size_t i = 0; i < trail.size(); ++i)
+    {
+        const auto age = (float) (((size_t) trailPos + trail.size() - 1 - i) % trail.size()) / (float) trail.size();
+        if (trail[i] == juce::Point<float>()) continue;
+        g.setColour (colours::blue.withAlpha (0.5f * (1.0f - age)));
+        g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre (trail[i]));
+    }
+    g.setColour (colours::text);
+    g.fillEllipse (juce::Rectangle<float> (14.0f, 14.0f).withCentre (now));
+    g.setColour (colours::blue);
+    g.drawEllipse (juce::Rectangle<float> (14.0f, 14.0f).withCentre (now), 2.0f);
+
+    g.setColour (colours::dim);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText ("front", area.withHeight (14.0f), juce::Justification::centredTop);
+}
+
+void OrbitPage::resized()
+{
+    auto r = getLocalBounds().withTrimmedLeft (576).reduced (12, 30);
+    auto top = r.removeFromTop (46);
+    path.setBounds (top.removeFromLeft (top.getWidth() / 2).reduced (4, 0));
+    rate.setBounds (top.reduced (4, 0));
+    r.removeFromTop (8);
+    const int kw = r.getWidth() / 4, kh = r.getHeight() / 2;
+    juce::Component* knobs[] = { &radius, &doppler, &tone, &width, &mix };
+    for (int i = 0; i < 5; ++i)
+        knobs[i]->setBounds (r.getX() + (i % 4) * kw, r.getY() + (i / 4) * kh, kw, kh);
+}
+
+//==============================================================================
+TapePage::TapePage (OriginPsyProcessor& p)
+    : proc (p),
+      mode (p.apvts, params::tapeMode, "Mode"),
+      trigger (p.apvts, params::tapeTrigger, "Trigger"),
+      length (p.apvts, params::tapeLength, "Length"),
+      curve (p.apvts, params::tapeCurve, "Curve", colours::orange),
+      mix (p.apvts, params::tapeMix, "Mix", colours::orange)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &mode, &trigger, &length, &curve, &mix, &brake })
+        addAndMakeVisible (c);
+    // Hold to brake; let go to come back.
+    brake.setColour (juce::TextButton::buttonColourId, colours::orange.withAlpha (0.25f));
+    brake.setColour (juce::TextButton::buttonOnColourId, colours::orange.withAlpha (0.8f));
+    brake.setTooltip ("Hold to slow the tape down, let go to bring it back. Automate Tape Brake to play it from the song.");
+    brake.onStateChange = [this] {
+        const bool down = brake.isDown();
+        const bool on = proc.apvts.getRawParameterValue (params::tapeBrake)->load() > 0.5f;
+        if (down != on) setBrake (down);
+    };
+}
+
+void TapePage::setBrake (bool on)
+{
+    if (auto* prm = proc.apvts.getParameter (params::tapeBrake))
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (on ? 1.0f : 0.0f);
+        prm->endChangeGesture();
+    }
+}
+
+void TapePage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawPanel (g, r, colours::orange, "TAPE STOP");
+    brake.setToggleState (proc.apvts.getRawParameterValue (params::tapeBrake)->load() > 0.5f, juce::dontSendNotification);
+
+    // Two reels that turn at the tape speed.
+    const float speed = proc.meters.tapeSpeed.load();
+    reelAngle += speed * 0.35f;
+    if (reelAngle > juce::MathConstants<float>::twoPi) reelAngle -= juce::MathConstants<float>::twoPi;
+    auto area = r.withWidth (560.0f).reduced (24.0f, 34.0f);
+    const float rad = std::min (area.getHeight() * 0.36f, area.getWidth() * 0.18f);
+    const juce::Point<float> c1 (area.getCentreX() - rad * 1.45f, area.getY() + rad + 10.0f);
+    const juce::Point<float> c2 (area.getCentreX() + rad * 1.45f, c1.y);
+    g.setColour (colours::outline);
+    g.drawLine (c1.x, c1.y + rad, c2.x, c2.y + rad, 2.0f);
+    for (auto c : { c1, c2 })
+    {
+        g.setColour (colours::panelLight);
+        g.fillEllipse (juce::Rectangle<float> (rad * 2.0f, rad * 2.0f).withCentre (c));
+        g.setColour (colours::orange.withAlpha (0.4f + 0.6f * speed));
+        g.drawEllipse (juce::Rectangle<float> (rad * 2.0f, rad * 2.0f).withCentre (c), 2.0f);
+        for (int k = 0; k < 3; ++k)
+        {
+            const float a = reelAngle + (float) k * juce::MathConstants<float>::twoPi / 3.0f;
+            g.drawLine (c.x + std::sin (a) * rad * 0.2f, c.y - std::cos (a) * rad * 0.2f,
+                        c.x + std::sin (a) * rad * 0.85f, c.y - std::cos (a) * rad * 0.85f, 3.0f);
+        }
+        g.fillEllipse (juce::Rectangle<float> (rad * 0.3f, rad * 0.3f).withCentre (c));
+    }
+
+    // Speed bar.
+    auto bar = area.withTop (c1.y + rad + 26.0f).withHeight (14.0f).reduced (40.0f, 0.0f);
+    g.setColour (colours::panelLight);
+    g.fillRoundedRectangle (bar, 4.0f);
+    g.setColour (colours::orange);
+    g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, speed)), 4.0f);
+    g.setColour (colours::text);
+    g.setFont (juce::FontOptions (12.0f));
+    g.drawText ("speed " + juce::String (juce::roundToInt (speed * 100.0f)) + " %", bar.translated (0.0f, 18.0f),
+                juce::Justification::centred);
+}
+
+void TapePage::resized()
+{
+    auto r = getLocalBounds().withTrimmedLeft (576).reduced (12, 30);
+    auto top = r.removeFromTop (46);
+    const int cw = top.getWidth() / 3;
+    mode.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    trigger.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    length.setBounds (top.reduced (4, 0));
+    r.removeFromTop (8);
+    const int kh = r.getHeight() / 2, kw = r.getWidth() / 4;
+    curve.setBounds (r.getX(), r.getY(), kw, kh);
+    mix.setBounds (r.getX() + kw, r.getY(), kw, kh);
+    brake.setBounds (juce::Rectangle<int> (r.getX() + 2 * kw, r.getY(), 2 * kw, kh).reduced (14, 22));
+}
+
+//==============================================================================
 GateRing::GateRing (OriginPsyProcessor& p, int b) : proc (p), band (b) {}
 
 void GateRing::paint (juce::Graphics& g)
@@ -668,6 +948,11 @@ void PhraseView::paint (juce::Graphics& g)
     const float x = r.getX() + r.getWidth() * (float) proc.meters.frazaPosition.load();
     g.setColour (colours::text.withAlpha (0.8f));
     g.drawVerticalLine ((int) x, r.getY(), r.getBottom());
+    // Where the curve is now: this is the value the PHRASE source sends.
+    const float now = proc.meters.frazaValue.load();
+    const float y = r.getBottom() - 12.0f - now * (r.getHeight() - 14.0f);
+    g.setColour (colours::cyan);
+    g.fillEllipse (juce::Rectangle<float> (9.0f, 9.0f).withCentre ({ x, y }));
     const float bar = (float) proc.meters.frazaPosition.load() * (float) fp.bars + 1.0f;
     g.setFont (juce::FontOptions (11.0f));
     g.drawText ("bar " + juce::String ((int) bar) + " / " + juce::String (fp.bars), r.withHeight (14.0f),
@@ -749,7 +1034,7 @@ void ModStrip::paint (juce::Graphics& g)
     drawPanel (g, getLocalBounds().toFloat(), colours::text, "MOD");
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (11.5f));
-    g.drawText ("Drag a source onto a knob. Shift-drag the knob to set depth, right-click it to invert or remove.",
+    g.drawText ("Drag a source onto a knob. Shift-drag the knob to set depth, right-click it for direction or to remove.",
                 getLocalBounds().reduced (12, 6).removeFromTop (18), juce::Justification::topRight);
 }
 
@@ -935,7 +1220,7 @@ void SlotCard::mouseUp (const juce::MouseEvent&) { onSelect (moduleType()); }
 //==============================================================================
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
-      echoPage (p), vokalPage (p), gatePage (p), fraza (p), modStrip (p), presetBar (p),
+      echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), tapePage (p), fraza (p), modStrip (p), presetBar (p),
       output (p.apvts, params::outGain, "Output", colours::cyan, true)
 {
     setLookAndFeel (&lnf);
@@ -947,6 +1232,9 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addChildComponent (echoPage);
     addChildComponent (vokalPage);
     addChildComponent (gatePage);
+    addChildComponent (zapPage);
+    addChildComponent (orbitPage);
+    addChildComponent (tapePage);
     addAndMakeVisible (fraza);
     addAndMakeVisible (modStrip);
     addAndMakeVisible (presetBar);
@@ -969,6 +1257,9 @@ void OriginPsyEditor::showModule (int type)
     echoPage.setVisible (type == (int) ModuleType::fraktalEcho);
     vokalPage.setVisible (type == (int) ModuleType::vokalAcid);
     gatePage.setVisible (type == (int) ModuleType::polimetarGate);
+    zapPage.setVisible (type == (int) ModuleType::zapResonator);
+    orbitPage.setVisible (type == (int) ModuleType::orbitDoppler);
+    tapePage.setVisible (type == (int) ModuleType::tapeStop);
     for (auto& c : cards)
     {
         c->selected = c->moduleType() == type;
@@ -1005,7 +1296,9 @@ void OriginPsyEditor::resized()
 
     for (int i = 0; i < Chain::numSlots; ++i)
         place (*cards[(size_t) i], { 16 + i * 255, 60, 243, 76 });
-    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage })
+    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
+                                (juce::Component*) &zapPage, (juce::Component*) &orbitPage,
+                                (juce::Component*) &tapePage })
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
@@ -1022,7 +1315,9 @@ void OriginPsyEditor::timerCallback()
     for (auto& c : cards) c->repaint();
     modStrip.repaint();
     // Knobs show their modulation live.
-    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage })
+    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
+                                (juce::Component*) &zapPage, (juce::Component*) &orbitPage,
+                                (juce::Component*) &tapePage })
         if (page->isVisible()) page->repaint();
     if (proc.currentPresetName != presetBar.shownName) presetBar.syncName();
     repaint (getLocalBounds().withHeight (getHeight() * 56 / 790));

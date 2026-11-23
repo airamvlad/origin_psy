@@ -45,6 +45,10 @@ juce::StringArray lfoRateNames()
 
 juce::StringArray lfoShapeNames() { return { "Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Random" }; }
 
+juce::StringArray noteNames() { return { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }; }
+juce::StringArray zapOrderNames() { return { "Up", "Down", "Random", "Hit strength" }; }
+juce::StringArray orbitPathNames() { return { "Circle", "Figure 8", "Spiral", "Fly-by" }; }
+
 bool isModulatable (const juce::RangedAudioParameter& p)
 {
     const auto& id = p.paramID;
@@ -66,6 +70,8 @@ juce::String formatValue (float v, const juce::String& unit)
         return juce::String (v, v < 10.0f ? 1 : 0) + " ms";
     if (unit == "st" || unit == "dB")
         return (v > 0.0f ? "+" : "") + juce::String (v, 1) + " " + unit;
+    if (unit == "m")
+        return juce::String (v, 1) + " m";
     if (unit == "amount")
         return (v > 0.0f ? "+" : "") + juce::String (juce::roundToInt (v * 100.0f)) + " %";
     return juce::String (v, 3);
@@ -192,7 +198,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { frazaOn, 1 }, "Phrase On", true));
         g->addChild (choice (frazaBars, "Phrase Length", { "8 bars", "16 bars", "32 bars" }, 1));
         g->addChild (integer (frazaOffset, "Phrase Offset", 0, 31, 0));
-        g->addChild (choice (frazaCurve, "Phrase Curve", frazaCurveNames(), Fraza::last4Bars));
+        g->addChild (choice (frazaCurve, "Phrase Curve", frazaCurveNames(), Fraza::rise));
         for (const auto& t : frazaTargets)
             g->addChild (flt (t.id, juce::String ("Phrase > ") + t.label, Range (-1.0f, 1.0f, 0.001f), 0.0f, "amount"));
         layout.add (std::move (g));
@@ -208,6 +214,47 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         }
         for (int i = 0; i < 4; ++i)
             g->addChild (percent (macro (i), "Macro " + juce::String (i + 1), 0.0f));
+        layout.add (std::move (g));
+    }
+
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("zap", "Zap Resonator", " | ");
+        g->addChild (flt (zapThreshold, "Zap Threshold", Range (-60.0f, 0.0f, 0.1f), -30.0f, "dB"));
+        g->addChild (choice (zapScale, "Zap Scale", scaleNames(), 0));
+        g->addChild (choice (zapRoot, "Zap Root", noteNames(), 4));
+        g->addChild (integer (zapOctave, "Zap Octave", 2, 7, 5));
+        g->addChild (choice (zapOrder, "Zap Note Order", zapOrderNames(), 0));
+        g->addChild (flt (zapSweep, "Zap Sweep", Range (-48.0f, 48.0f, 0.1f), 24.0f, "st"));
+        g->addChild (flt (zapSweepTime, "Zap Sweep Time", skewed (5.0f, 1000.0f, 80.0f), 80.0f, "ms"));
+        g->addChild (flt (zapDecay, "Zap Decay", skewed (20.0f, 2000.0f, 300.0f), 300.0f, "ms"));
+        g->addChild (percent (zapResonance, "Zap Resonance", 0.8f));
+        g->addChild (percent (zapWidth, "Zap Width", 0.6f));
+        g->addChild (percent (zapMix, "Zap Mix", 0.5f));
+        layout.add (std::move (g));
+    }
+
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("orbit", "Orbit Doppler", " | ");
+        g->addChild (choice (orbitPath, "Orbit Path", orbitPathNames(), 0));
+        g->addChild (choice (orbitRate, "Orbit Rate", lfoRateNames(), 6));
+        g->addChild (flt (orbitRadius, "Orbit Radius", skewed (1.0f, 30.0f, 6.0f), 6.0f, "m"));
+        g->addChild (percent (orbitDoppler, "Orbit Doppler", 0.5f));
+        g->addChild (percent (orbitTone, "Orbit Distance Tone", 0.5f));
+        g->addChild (percent (orbitWidth, "Orbit Width", 0.8f));
+        g->addChild (percent (orbitMix, "Orbit Mix", 0.8f));
+        layout.add (std::move (g));
+    }
+
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("tape", "Tape Stop", " | ");
+        juce::StringArray lengthNames;
+        for (const auto& l : TapeStop::lengths) lengthNames.add (l.name);
+        g->addChild (choice (tapeMode, "Tape Mode", { "Stop", "Stop & Start", "Slow Down", "Start" }, 0));
+        g->addChild (choice (tapeTrigger, "Tape Trigger", { "Brake button", "Every 2 bars", "Every 4 bars", "Every 8 bars", "Every 16 bars" }, 0));
+        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { tapeBrake, 1 }, "Tape Brake", false));
+        g->addChild (choice (tapeLength, "Tape Length", lengthNames, 3));
+        g->addChild (percent (tapeCurve, "Tape Curve", 0.5f));
+        g->addChild (percent (tapeMix, "Tape Mix", 1.0f));
         layout.add (std::move (g));
     }
 
