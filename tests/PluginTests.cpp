@@ -124,7 +124,7 @@ void allModulesAndFraza()
     p.prepareToPlay (48000.0, 256);
     const auto out = run (p, 48000.0, 256, 48000 * 8);
     check (healthy (out), "all modules with Drop and maximum settings stay bounded");
-    check (p.apvts.getRawParameterValue (params::frazaTargets[0].id)->load() > 0.1f, "Drop sets the Fraza amounts");
+    check (p.apvts.getRawParameterValue (params::frazaTargets[0].id)->load() > 0.1f, "Drop sets the Phrase amounts");
 }
 
 void state()

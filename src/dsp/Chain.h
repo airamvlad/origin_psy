@@ -16,9 +16,9 @@ inline const char* moduleName (ModuleType t) noexcept
 {
     switch (t)
     {
-        case ModuleType::fraktalEcho:   return "Fraktal Echo";
-        case ModuleType::vokalAcid:     return "Vokal Acid";
-        case ModuleType::polimetarGate: return "Polimetar Gate";
+        case ModuleType::fraktalEcho:   return "Fractal Echo";
+        case ModuleType::vokalAcid:     return "Vocal Acid";
+        case ModuleType::polimetarGate: return "Polymeter Gate";
         case ModuleType::empty:         break;
     }
     return "Empty";
