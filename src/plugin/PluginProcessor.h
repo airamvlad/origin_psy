@@ -50,6 +50,8 @@ public:
     void setGatePattern (int band, uint32_t pattern);
     void toggleGateStep (int band, int step);
 
+    /** Swaps two slots of the chain (module and on/off), e.g. after a drag. */
+    void swapSlots (int a, int b);
     // Spectral Ratchet freeze steps (bit set = freeze), saved like the gate patterns.
     uint32_t getRatchetPattern() const noexcept { return ratchetPattern.load(); }
     void setRatchetPattern (uint32_t pattern) noexcept { ratchetPattern = pattern & 0xffffu; }
