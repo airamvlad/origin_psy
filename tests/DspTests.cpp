@@ -231,6 +231,73 @@ void vokalTests()
     check (allFinite (l2) && allFinite (r2), "robot at full resonance stays bounded");
 }
 
+/** Like run(), with a mono sidechain key next to the audio. */
+template <typename Module>
+void runWithKey (Module& m, std::vector<float>& l, std::vector<float>& r, const std::vector<float>* key, double bpm,
+                 int block = 256)
+{
+    double ppq = 0.0;
+    for (size_t start = 0; start < l.size(); start += (size_t) block)
+    {
+        const int n = (int) std::min ((size_t) block, l.size() - start);
+        auto t = transportAt (bpm, ppq);
+        m.process (l.data() + start, r.data() + start, n, t, key != nullptr ? key->data() + start : nullptr);
+        ppq += n / t.samplesPerBeat (sr);
+    }
+}
+
+/** Kick-like key: a 60 Hz thump on every beat at 120 BPM (24000 samples). */
+std::vector<float> kicks (size_t length, size_t first = 1000)
+{
+    std::vector<float> v (length, 0.0f);
+    for (size_t i = first; i < length; i += 24000)
+        for (size_t k = 0; k < 6000 && i + k < length; ++k)
+            v[i + k] = 0.9f * (float) std::exp (-(double) k / 1500.0) * (float) std::sin (twoPi * 60.0 * (double) k / sr);
+    return v;
+}
+
+void sidechainTests()
+{
+    // Gate band in sidechain mode ducks on each kick and opens again between them.
+    PolimetarGate::Params p;
+    for (auto& band : p.bands) { band.sidechain = true; band.depth = 1.0f; band.attackMs = 1.0f; band.releaseMs = 40.0f; }
+    PolimetarGate g;
+    g.prepare (sr, 256);
+    g.setParams (p);
+    g.reset();
+    const size_t len = (size_t) sr * 2;
+    const auto key = kicks (len);
+    auto l = sine (1000.0, len), r = l;
+    runWithKey (g, l, r, &key, 120.0);
+    check (allFinite (l), "sidechain gate output is finite");
+    check (rms (l, 25000, 26500) < 0.1, "sidechain gate ducks on the kick");
+    check (rms (l, 40000, 48000) > 0.3, "sidechain gate opens between kicks");
+
+    // Without a sidechain the band stays open.
+    g.reset();
+    auto l2 = sine (1000.0, len), r2 = l2;
+    runWithKey (g, l2, r2, nullptr, 120.0);
+    check (rms (l2, 25000, 26500) > 0.3, "sidechain gate with no key stays open");
+
+    // Zap listening to the key: fires on the kicks although the input has no hits.
+    ZapResonator z;
+    z.prepare (sr, 256);
+    ZapResonator::Params zp;
+    zp.mix = 1.0f;
+    zp.listenToKey = true;
+    z.setParams (zp);
+    z.reset();
+    auto zl = saw (110.0, len, 0.3f), zr = zl;
+    runWithKey (z, zl, zr, &key, 120.0);
+    check (z.getHitCount() == 4, "zap listening to the sidechain fires on each kick");
+    z.reset();
+    auto zl2 = saw (110.0, len, 0.3f), zr2 = zl2;
+    zp.listenToKey = false;
+    z.setParams (zp);
+    runWithKey (z, zl2, zr2, &key, 120.0);
+    check (z.getHitCount() <= 1, "zap listening to the input ignores the sidechain");
+}
+
 void gateTests()
 {
     PolimetarGate::Band b;
@@ -670,6 +737,7 @@ int main()
     zapTests();
     orbitTests();
     tapeTests();
+    sidechainTests();
     performanceTest();
 
     if (failures == 0) std::printf ("All DSP tests passed.\n");

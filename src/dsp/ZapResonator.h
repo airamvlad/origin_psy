@@ -32,6 +32,7 @@ public:
         float resonance = 0.8f;      // 0 = filtered input (noisy), 1 = pure ringing tone
         float width = 0.6f;          // voices spread across the stereo field
         float mix = 0.5f;            // 0..0.5 adds zaps, 0.5..1 fades the dry signal out
+        bool listenToKey = false;    // hits come from the sidechain key instead of the input
     };
 
     void prepare (double sampleRate, int /*maxBlock*/)
@@ -85,8 +86,11 @@ public:
         return scales[(size_t) std::clamp (p.scale, 0, (int) scales.size() - 1)].size * 2;
     }
 
-    void process (float* left, float* right, int numSamples, const Transport&) noexcept
+    /** `key` is the mono sidechain signal, or nullptr when there is none
+        (the zaps then listen to the input even when listenToKey is set). */
+    void process (float* left, float* right, int numSamples, const Transport&, const float* key = nullptr) noexcept
     {
+        const float* detect = params.listenToKey ? key : nullptr;
         const float threshold = dbToGain (params.thresholdDb);
         const float sweepDecay = (float) std::exp (-1.0 / (std::max (1.0f, params.sweepMs) * 0.001 * sr * 0.25));
         const float ampDecay = (float) std::exp (-1.0 / (std::max (5.0f, params.decayMs) * 0.001 * sr * 0.25));
@@ -97,7 +101,7 @@ public:
         {
             const float inL = left[n], inR = right[n];
             const float mono = 0.5f * (inL + inR);
-            const float a = std::abs (mono);
+            const float a = std::abs (detect != nullptr ? detect[n] : mono);
 
             // Transient: the fast envelope jumps well above the slow one.
             fast = a + (a > fast ? fastAttack : fastRelease) * (fast - a);

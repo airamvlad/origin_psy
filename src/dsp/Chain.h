@@ -102,7 +102,8 @@ public:
     void setLayout (const Layout& l) noexcept { pending = l; }
     const Layout& activeLayout() const noexcept { return active; }
 
-    void process (float* left, float* right, int numSamples, const Transport& t) noexcept
+    /** `key` is the mono sidechain signal, or nullptr when the host sends none. */
+    void process (float* left, float* right, int numSamples, const Transport& t, const float* key = nullptr) noexcept
     {
         if (pending.effective() != active.effective() && ! fadingOut)
             fadingOut = true;
@@ -115,8 +116,8 @@ public:
             {
                 case ModuleType::fraktalEcho:   echo.process (left, right, numSamples, t); break;
                 case ModuleType::vokalAcid:     vokal.process (left, right, numSamples, t); break;
-                case ModuleType::polimetarGate: gate.process (left, right, numSamples, t); break;
-                case ModuleType::zapResonator:  zap.process (left, right, numSamples, t); break;
+                case ModuleType::polimetarGate: gate.process (left, right, numSamples, t, key); break;
+                case ModuleType::zapResonator:  zap.process (left, right, numSamples, t, key); break;
                 case ModuleType::orbitDoppler:  orbit.process (left, right, numSamples, t); break;
                 case ModuleType::tapeStop:      tape.process (left, right, numSamples, t); break;
                 case ModuleType::empty: break;

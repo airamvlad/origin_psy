@@ -9,8 +9,8 @@ namespace originpsy
 {
 
 /** Modulation sources. LFOs swing both ways (-1..1); the others go one way (0..1). */
-enum class ModSource : int { none = 0, lfo1, lfo2, envelope, macro1, macro2, macro3, macro4, fraza };
-constexpr int numModSources = 9;
+enum class ModSource : int { none = 0, lfo1, lfo2, envelope, macro1, macro2, macro3, macro4, fraza, sidechain };
+constexpr int numModSources = 10;
 
 inline const char* modSourceName (ModSource s) noexcept
 {
@@ -24,6 +24,7 @@ inline const char* modSourceName (ModSource s) noexcept
         case ModSource::macro3:   return "M3";
         case ModSource::macro4:   return "M4";
         case ModSource::fraza:    return "PHRASE";
+        case ModSource::sidechain: return "SC";
         case ModSource::none:     break;
     }
     return "";
@@ -78,10 +79,10 @@ struct Lfo
 class EnvelopeFollower
 {
 public:
-    void prepare (double sampleRate) noexcept
+    void prepare (double sampleRate, double attackSeconds = 0.005, double releaseSeconds = 0.15) noexcept
     {
-        attack = (float) std::exp (-1.0 / (0.005 * sampleRate));
-        release = (float) std::exp (-1.0 / (0.15 * sampleRate));
+        attack = (float) std::exp (-1.0 / (attackSeconds * sampleRate));
+        release = (float) std::exp (-1.0 / (releaseSeconds * sampleRate));
         level = 0.0f;
     }
 

@@ -48,6 +48,16 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] Sweep +24 falls onto the note, -24 rises onto it; Resonance 0 % sounds noisy, 100 % a clean tone
 - [ ] Mix 50 %: hats plus zaps; 100 %: only zaps
 
+## Sidechain
+
+- [ ] Bitwig: the plugin offers a sidechain input; pick the kick track
+- [ ] Polymeter Gate, Low band Mode Sidechain, Depth 100 %: the bass ducks on every kick; Release changes how fast it comes back
+- [ ] All bands on Sidechain: the whole track pumps with the kick
+- [ ] Zap Resonator, Listen to Sidechain: a zap on every kick
+- [ ] SC chip moves with the kick; dragged onto Echo Mix (direction Down) it ducks the echoes
+- [ ] No sidechain picked: the gate ring and the Zap page say "no sidechain", nothing breaks
+- [ ] Mono track with a stereo sidechain still works
+
 ## Orbit Doppler
 
 - [ ] On a lead: the sound goes round the head in time with the song (One lap = 1 bar)

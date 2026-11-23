@@ -7,7 +7,8 @@ using namespace originpsy;
 OriginPsyProcessor::OriginPsyProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
-                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                          .withInput ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "OriginPsy", params::createLayout())
 {
     for (auto* p : getParameters())
@@ -34,7 +35,15 @@ bool OriginPsyProcessor::isBusesLayoutSupported (const BusesLayout& layouts) con
     const auto out = layouts.getMainOutputChannelSet();
     if (out != juce::AudioChannelSet::stereo() && out != juce::AudioChannelSet::mono())
         return false;
-    return layouts.getMainInputChannelSet() == out;
+    if (layouts.getMainInputChannelSet() != out)
+        return false;
+    // The sidechain is optional: off, mono or stereo.
+    if (layouts.inputBuses.size() > 1)
+    {
+        const auto sc = layouts.getChannelSet (true, 1);
+        return sc.isDisabled() || sc == juce::AudioChannelSet::mono() || sc == juce::AudioChannelSet::stereo();
+    }
+    return true;
 }
 
 void OriginPsyProcessor::prepareToPlay (double sr, int samplesPerBlock)
@@ -43,6 +52,8 @@ void OriginPsyProcessor::prepareToPlay (double sr, int samplesPerBlock)
     chain.prepare (sr, samplesPerBlock);
     monoScratch.assign ((size_t) std::max (1, samplesPerBlock), 0.0f);
     envelope.prepare (sr);
+    keyEnvelope.prepare (sr, 0.001, 0.12);
+    keyScratch.assign ((size_t) std::max (1, samplesPerBlock), 0.0f);
     for (size_t i = 0; i < modParams.size(); ++i) modNorm[i].store (modParams[i]->getValue());
     updateModules();
     chain.reset();
@@ -88,9 +99,11 @@ float OriginPsyProcessor::m (const juce::String& id) const
 }
 
 void OriginPsyProcessor::computeModulation (const Transport& t, float fraza, const float* left, const float* right,
-                                            int numSamples)
+                                            int numSamples, const float* key)
 {
     envelope.process (left, right, numSamples);
+    if (key != nullptr) keyEnvelope.process (key, nullptr, numSamples);
+    else keyEnvelope.process (keyScratch.data(), nullptr, 0);
 
     std::array<float, numModSources> src {};
     for (int i = 0; i < 2; ++i)
@@ -99,6 +112,7 @@ void OriginPsyProcessor::computeModulation (const Transport& t, float fraza, con
     src[(size_t) ModSource::envelope] = envelope.value();
     for (int i = 0; i < 4; ++i) src[(size_t) ModSource::macro1 + (size_t) i] = value (params::macro (i));
     src[(size_t) ModSource::fraza] = fraza;
+    src[(size_t) ModSource::sidechain] = key != nullptr ? keyEnvelope.value() : 0.0f;
     for (int i = 0; i < numModSources; ++i) meters.source[(size_t) i].store (src[(size_t) i], std::memory_order_relaxed);
 
     for (size_t i = 0; i < modParams.size(); ++i)
@@ -154,7 +168,9 @@ void OriginPsyProcessor::updateModules()
     for (int b = 0; b < 3; ++b)
     {
         auto& band = g.bands[(size_t) b];
-        band.euclidMode = m (params::gateBand (b, "mode")) > 0.5f;
+        const int mode = (int) m (params::gateBand (b, "mode"));
+        band.euclidMode = mode == 1;
+        band.sidechain = mode == 2;
         band.steps = (int) m (params::gateBand (b, "steps"));
         band.hits = (int) m (params::gateBand (b, "hits"));
         band.rotate = (int) m (params::gateBand (b, "rotate"));
@@ -174,6 +190,7 @@ void OriginPsyProcessor::updateModules()
     z.root = (int) m (params::zapRoot);
     z.octave = (int) m (params::zapOctave);
     z.order = (int) m (params::zapOrder);
+    z.listenToKey = (int) m (params::zapKey) == 1;
     z.sweep = m (params::zapSweep);
     z.sweepMs = m (params::zapSweepTime);
     z.decayMs = m (params::zapDecay);
@@ -208,10 +225,30 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 {
     juce::ScopedNoDenormals noDenormals;
     const int numSamples = buffer.getNumSamples();
-    const int numIn = getTotalNumInputChannels();
-    for (int ch = numIn; ch < getTotalNumOutputChannels(); ++ch)
+    const int numMain = getMainBusNumOutputChannels();
+    for (int ch = getMainBusNumInputChannels(); ch < numMain; ++ch)
         buffer.clear (ch, 0, numSamples);
     if (numSamples == 0) return;
+
+    // Sidechain key: the mono sum of the sidechain input, when the host sends one.
+    const float* key = nullptr;
+    if (getBusCount (true) > 1 && getBus (true, 1)->isEnabled())
+    {
+        const auto sc = getBusBuffer (buffer, true, 1);
+        if (sc.getNumChannels() > 0)
+        {
+            if ((int) keyScratch.size() < numSamples) keyScratch.resize ((size_t) numSamples); // only if the host lied about the block size
+            const float gain = 1.0f / (float) sc.getNumChannels();
+            for (int n = 0; n < numSamples; ++n)
+            {
+                float sum = 0.0f;
+                for (int ch = 0; ch < sc.getNumChannels(); ++ch) sum += sc.getSample (ch, n);
+                keyScratch[(size_t) n] = sum * gain;
+            }
+            key = keyScratch.data();
+        }
+    }
+    meters.sidechainConnected = key != nullptr;
 
     const auto t = readTransport (numSamples);
 
@@ -224,9 +261,9 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     const float fraza = value (params::frazaOn) > 0.5f ? Fraza::evaluate (fp, phrasePos) : 0.0f;
 
     float* left = buffer.getWritePointer (0);
-    float* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
+    float* right = numMain > 1 ? buffer.getWritePointer (1) : nullptr;
 
-    computeModulation (t, fraza, left, right, numSamples);
+    computeModulation (t, fraza, left, right, numSamples, key);
     updateModules();
     if (right == nullptr)
     {
@@ -234,19 +271,19 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         if ((int) monoScratch.size() < numSamples) monoScratch.resize ((size_t) numSamples); // only if the host lied about the block size
         float* tmp = monoScratch.data();
         std::copy (left, left + numSamples, tmp);
-        chain.process (left, tmp, numSamples, t);
+        chain.process (left, tmp, numSamples, t, key);
         for (int n = 0; n < numSamples; ++n) left[n] = 0.5f * (left[n] + tmp[n]);
     }
     else
     {
-        chain.process (left, right, numSamples, t);
+        chain.process (left, right, numSamples, t, key);
     }
 
     outGain.setTargetValue (juce::Decibels::decibelsToGain (value (params::outGain)));
     for (int n = 0; n < numSamples; ++n)
     {
         const float g = outGain.getNextValue();
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        for (int ch = 0; ch < numMain; ++ch)
             buffer.getWritePointer (ch)[n] *= g;
     }
 
