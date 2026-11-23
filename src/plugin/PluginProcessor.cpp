@@ -274,6 +274,7 @@ juce::ValueTree OriginPsyProcessor::createStateTree()
         m.setProperty ("source", (int) slot.source, nullptr);
         m.setProperty ("dest", modParams[(size_t) slot.destination]->paramID, nullptr);
         m.setProperty ("depth", slot.depth, nullptr);
+        m.setProperty ("bipolar", slot.bipolar, nullptr);
         mods.appendChild (m, nullptr);
     }
     state.removeChild (state.getChildWithName ("MODS"), nullptr);
@@ -301,7 +302,8 @@ void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
         const int dest = modulatableIndex (m.getProperty ("dest").toString());
         const int src = (int) m.getProperty ("source", 0);
         if (dest < 0 || src <= 0 || src >= numModSources || slot >= ModMatrix::numSlots) continue;
-        matrix.set (slot++, { (ModSource) src, dest, (float) m.getProperty ("depth", 0.0f) });
+        matrix.set (slot++, { (ModSource) src, dest, (float) m.getProperty ("depth", 0.0f),
+                              (bool) m.getProperty ("bipolar", isBipolar ((ModSource) src)) });
     }
     state.removeChild (state.getChildWithName ("MODS"), nullptr);
     apvts.replaceState (state);

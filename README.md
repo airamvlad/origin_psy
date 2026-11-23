@@ -39,14 +39,14 @@ The sound is split into three bands (**Low | Mid** and **Mid | High**), and each
 
 ### Phrase
 
-A curve that knows where you are in an 8, 16 or 32 bar phrase. The knobs on the right set how far the curve moves each parameter (Echo Mix, Echo Feedback, Echo Damp, Vocal Formant, Vocal Resonance, Gate Depth), so the build-up plays itself with no automation lanes. **Offset** moves the start of the phrase by a few bars. The **DROP** button sets up a ready-made build-up over the last 4 bars of the phrase in one click.
+A curve that knows where you are in an 8, 16 or 32 bar phrase (it rises through the phrase by default; the dot on the curve shows its value now). The knobs on the right set how far the curve moves each parameter (Echo Mix, Echo Feedback, Echo Damp, Vocal Formant, Vocal Resonance, Gate Depth), so the build-up plays itself with no automation lanes. **Offset** moves the start of the phrase by a few bars. The **DROP** button sets up a ready-made build-up over the last 4 bars of the phrase in one click.
 
 ### Modulation
 
 The **MOD** row holds the sources: **LFO 1** and **LFO 2** (synced to the song, rate from 1/16 to 16 bars, sine, triangle, saw up, saw down, square or random), **ENV** (follows the input level), the macros **M1** to **M4**, and **PHRASE** (the phrase curve). Each chip shows its live value.
 
 - Drag a source onto any knob to connect it. A coloured ring around the knob shows how far it moves, and a white dot shows where the parameter really is right now.
-- Shift-drag the knob to set the depth of its newest connection. Right-click it to invert or remove a connection.
+- Shift-drag the knob to set the depth of its newest connection. Right-click it to choose the direction: **Up** or **Down** (one way from where the knob is) or **Both ways** (swings around the knob). LFOs start as Both ways, the other sources as Up.
 - Up to 8 connections at once. They are saved with the project and in presets.
 - The macros start wired the same way in every factory preset: M1 Space (echo mix and feedback), M2 Talk (vokal resonance), M3 Chop (gate depth on the mid and high bands). M4 is free.
 

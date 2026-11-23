@@ -192,7 +192,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { frazaOn, 1 }, "Phrase On", true));
         g->addChild (choice (frazaBars, "Phrase Length", { "8 bars", "16 bars", "32 bars" }, 1));
         g->addChild (integer (frazaOffset, "Phrase Offset", 0, 31, 0));
-        g->addChild (choice (frazaCurve, "Phrase Curve", frazaCurveNames(), Fraza::last4Bars));
+        g->addChild (choice (frazaCurve, "Phrase Curve", frazaCurveNames(), Fraza::rise));
         for (const auto& t : frazaTargets)
             g->addChild (flt (t.id, juce::String ("Phrase > ") + t.label, Range (-1.0f, 1.0f, 0.001f), 0.0f, "amount"));
         layout.add (std::move (g));

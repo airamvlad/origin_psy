@@ -44,7 +44,8 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 ## Modulation
 
 - [ ] Drag LFO 1 onto Echo Feedback: a blue ring appears and the white dot moves with the LFO in time with the song
-- [ ] Shift-drag the knob up and down: the ring grows and shrinks; right-click: Invert flips it, Remove deletes it
+- [ ] Shift-drag the knob up and down: the ring grows and shrinks; right-click: Up, Down and Both ways change the direction (the ring follows), Remove deletes it
+- [ ] Drag PHRASE onto a knob: the dot on the Phrase curve and the white dot on the knob climb together through the phrase
 - [ ] ENV on Vocal Formant: the formant follows how loud the input is
 - [ ] M1 (Space) turned up: more echo; M3 (Chop): the gate gets deeper
 - [ ] Bitwig automation of a modulated knob still works, and the modulation rides on top of it
