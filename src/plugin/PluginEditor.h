@@ -20,6 +20,8 @@ inline const juce::Colour dim { 0xff8b87a0 };
 inline const juce::Colour cyan { 0xff39e1d0 };
 inline const juce::Colour magenta { 0xffe24bd8 };
 inline const juce::Colour amber { 0xffffb347 };
+inline const juce::Colour lime { 0xffa6ff4d };
+inline const juce::Colour blue { 0xff5aa9ff };
 } // namespace colours
 
 class PsyLookAndFeel : public juce::LookAndFeel_V4
@@ -131,6 +133,36 @@ private:
     std::vector<std::unique_ptr<Choice>> vowels;
     Choice character;
     Knob glide, shift, resonance, accent, drive, mix;
+};
+
+class ZapPage : public juce::Component
+{
+public:
+    explicit ZapPage (OriginPsyProcessor&);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    OriginPsyProcessor& proc;
+    Choice scale, root, order;
+    Knob threshold, octave, sweep, sweepTime, decay, resonance, width, mix;
+    uint32_t lastHits = 0;
+    float flash = 0.0f;
+};
+
+class OrbitPage : public juce::Component
+{
+public:
+    explicit OrbitPage (OriginPsyProcessor&);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    OriginPsyProcessor& proc;
+    Choice path, rate;
+    Knob radius, doppler, tone, width, mix;
+    std::array<juce::Point<float>, 24> trail {};
+    int trailPos = 0;
 };
 
 class GateRing : public juce::Component
@@ -273,6 +305,8 @@ private:
     originpsy::ui::EchoPage echoPage;
     originpsy::ui::VokalPage vokalPage;
     originpsy::ui::GatePage gatePage;
+    originpsy::ui::ZapPage zapPage;
+    originpsy::ui::OrbitPage orbitPage;
     originpsy::ui::FrazaStrip fraza;
     originpsy::ui::ModStrip modStrip;
     originpsy::ui::PresetBar presetBar;

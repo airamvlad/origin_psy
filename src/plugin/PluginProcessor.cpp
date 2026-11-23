@@ -166,6 +166,32 @@ void OriginPsyProcessor::updateModules()
         band.pattern = gatePatterns[(size_t) b].load();
     }
     chain.gate.setParams (g);
+
+    // Zap Resonator.
+    ZapResonator::Params z;
+    z.thresholdDb = m (params::zapThreshold);
+    z.scale = (int) m (params::zapScale);
+    z.root = (int) m (params::zapRoot);
+    z.octave = (int) m (params::zapOctave);
+    z.order = (int) m (params::zapOrder);
+    z.sweep = m (params::zapSweep);
+    z.sweepMs = m (params::zapSweepTime);
+    z.decayMs = m (params::zapDecay);
+    z.resonance = m (params::zapResonance);
+    z.width = m (params::zapWidth);
+    z.mix = m (params::zapMix);
+    chain.zap.setParams (z);
+
+    // Orbit Doppler.
+    OrbitDoppler::Params o;
+    o.path = (int) m (params::orbitPath);
+    o.rate = (int) m (params::orbitRate);
+    o.radius = m (params::orbitRadius);
+    o.doppler = m (params::orbitDoppler);
+    o.distanceTone = m (params::orbitTone);
+    o.width = m (params::orbitWidth);
+    o.mix = m (params::orbitMix);
+    chain.orbit.setParams (o);
 }
 
 void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -218,6 +244,12 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.vokalVowel = chain.vokal.getVowelPosition();
     meters.vokalAccent = chain.vokal.getAccent();
     for (int b = 0; b < 3; ++b) meters.gateStep[(size_t) b] = chain.gate.getStep (b);
+    meters.zapNote = chain.zap.getLastNote();
+    meters.zapHits = chain.zap.getHitCount();
+    meters.zapLevel = chain.zap.getLevel();
+    const auto orbitPos = chain.orbit.getPosition();
+    meters.orbitX = orbitPos.x;
+    meters.orbitY = orbitPos.y;
     meters.frazaPosition = phrasePos;
     meters.frazaValue = fraza;
     meters.bpm = t.bpm;

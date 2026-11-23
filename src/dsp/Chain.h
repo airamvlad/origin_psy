@@ -1,16 +1,18 @@
 #pragma once
 
 #include "FraktalEcho.h"
+#include "OrbitDoppler.h"
 #include "PolimetarGate.h"
 #include "VokalAcid.h"
+#include "ZapResonator.h"
 
 #include <array>
 
 namespace originpsy
 {
 
-enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate };
-constexpr int numModuleTypes = 4;
+enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler };
+constexpr int numModuleTypes = 6;
 
 inline const char* moduleName (ModuleType t) noexcept
 {
@@ -19,6 +21,8 @@ inline const char* moduleName (ModuleType t) noexcept
         case ModuleType::fraktalEcho:   return "Fractal Echo";
         case ModuleType::vokalAcid:     return "Vocal Acid";
         case ModuleType::polimetarGate: return "Polymeter Gate";
+        case ModuleType::zapResonator:  return "Zap Resonator";
+        case ModuleType::orbitDoppler:  return "Orbit Doppler";
         case ModuleType::empty:         break;
     }
     return "Empty";
@@ -63,6 +67,8 @@ public:
     FraktalEcho echo;
     VokalAcid vokal;
     PolimetarGate gate;
+    ZapResonator zap;
+    OrbitDoppler orbit;
 
     void prepare (double sampleRate, int maxBlock)
     {
@@ -70,6 +76,8 @@ public:
         echo.prepare (sampleRate, maxBlock);
         vokal.prepare (sampleRate, maxBlock);
         gate.prepare (sampleRate, maxBlock);
+        zap.prepare (sampleRate, maxBlock);
+        orbit.prepare (sampleRate, maxBlock);
         fadeSamples = std::max (1, (int) (sampleRate * 0.008));
         reset();
     }
@@ -79,6 +87,8 @@ public:
         echo.reset();
         vokal.reset();
         gate.reset();
+        zap.reset();
+        orbit.reset();
         fadeGain = 1.0f;
         fadingOut = false;
         active = pending;
@@ -101,6 +111,8 @@ public:
                 case ModuleType::fraktalEcho:   echo.process (left, right, numSamples, t); break;
                 case ModuleType::vokalAcid:     vokal.process (left, right, numSamples, t); break;
                 case ModuleType::polimetarGate: gate.process (left, right, numSamples, t); break;
+                case ModuleType::zapResonator:  zap.process (left, right, numSamples, t); break;
+                case ModuleType::orbitDoppler:  orbit.process (left, right, numSamples, t); break;
                 case ModuleType::empty: break;
             }
         }
@@ -134,6 +146,8 @@ private:
             case ModuleType::fraktalEcho:   echo.reset(); break;
             case ModuleType::vokalAcid:     vokal.reset(); break;
             case ModuleType::polimetarGate: gate.reset(); break;
+            case ModuleType::zapResonator:  zap.reset(); break;
+            case ModuleType::orbitDoppler:  orbit.reset(); break;
             case ModuleType::empty: break;
         }
     }

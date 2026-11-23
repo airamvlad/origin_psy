@@ -41,6 +41,20 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] DROP: over the last 4 bars of the phrase the echo grows and the gate deepens; on beat 1 of the next phrase everything returns
 - [ ] Offset: the phrase start moves when the song does not start on bar 1
 
+## Zap Resonator
+
+- [ ] On a hi-hat loop: every hat fires a zap, and the zaps are in the key (Scale, Root)
+- [ ] Threshold up: only the loud hits fire; Note order Random and Hit strength sound different from Up
+- [ ] Sweep +24 falls onto the note, -24 rises onto it; Resonance 0 % sounds noisy, 100 % a clean tone
+- [ ] Mix 50 %: hats plus zaps; 100 %: only zaps
+
+## Orbit Doppler
+
+- [ ] On a lead: the sound goes round the head in time with the song (One lap = 1 bar)
+- [ ] The pitch bends up as it comes closer and down as it moves away; Doppler 0 % keeps the pitch
+- [ ] Fly-by: passes in front from left to right and back; Spiral: swings in close and out
+- [ ] No clicks when changing Path or One lap while playing
+
 ## Modulation
 
 - [ ] Drag LFO 1 onto Echo Feedback: a blue ring appears and the white dot moves with the LFO in time with the song
