@@ -81,6 +81,7 @@ public:
         std::atomic<double> bpm { 140.0 };
         std::atomic<float> limiterDb { 0.0f };
         std::atomic<bool> hostPlaying { false };
+        std::atomic<bool> sidechainConnected { false };
         std::array<std::atomic<float>, originpsy::numModSources> source {};
     } meters;
 
@@ -108,7 +109,8 @@ public:
 private:
     originpsy::Transport readTransport (int numSamples);
     void updateModules();
-    void computeModulation (const originpsy::Transport&, float fraza, const float* left, const float* right, int numSamples);
+    void computeModulation (const originpsy::Transport&, float fraza, const float* left, const float* right, int numSamples,
+                            const float* key);
     float value (const juce::String& id) const { return apvts.getRawParameterValue (id)->load(); }
     float m (const juce::String& id) const; // value after modulation
 
@@ -117,7 +119,8 @@ private:
     double sampleRate = 48000.0;
     juce::SmoothedValue<float> outGain;
     std::vector<float> monoScratch;
-    originpsy::EnvelopeFollower envelope;
+    originpsy::EnvelopeFollower envelope, keyEnvelope;
+    std::vector<float> keyScratch;
     originpsy::Limiter limiter;
     std::vector<juce::RangedAudioParameter*> modParams;
     std::unordered_map<juce::String, int> modIndex;

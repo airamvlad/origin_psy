@@ -66,7 +66,7 @@ void parameters()
 {
     OriginPsyProcessor p;
     const auto& all = p.getParameters();
-    check (all.size() >= 127, "all module parameters are exposed to the host");
+    check (all.size() >= 128, "all module parameters are exposed to the host");
     juce::StringArray ids;
     for (auto* prm : all)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
@@ -457,6 +457,72 @@ void presets()
     tmp.deleteRecursively();
 }
 
+void sidechain()
+{
+    OriginPsyProcessor p;
+    auto layout = p.getBusesLayout();
+    check (layout.inputBuses.size() == 2, "there is a sidechain input");
+    layout.inputBuses.getReference (1) = juce::AudioChannelSet::stereo();
+    check (p.setBusesLayout (layout), "the sidechain can be switched on");
+    for (int i = 0; i < Chain::numSlots; ++i) setValue (p, params::slotModule (i), 0.0f);
+    setValue (p, params::slotModule (0), (float) ModuleType::polimetarGate);
+    for (int b = 0; b < 3; ++b)
+    {
+        setValue (p, params::gateBand (b, "mode"), 2.0f);
+        setValue (p, params::gateBand (b, "depth"), 1.0f);
+    }
+    p.prepareToPlay (48000.0, 256);
+
+    // Steady sine in, a kick every beat (120 BPM internal clock is irrelevant here) on the sidechain.
+    juce::AudioBuffer<float> buffer (4, 256);
+    juce::MidiBuffer midi;
+    std::vector<float> out;
+    float scPeak = 0.0f;
+    for (int start = 0; start < 48000; start += 256)
+    {
+        for (int i = 0; i < 256; ++i)
+        {
+            const int n = start + i;
+            const float v = 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 1000.0 * n / 48000.0);
+            const int k = n % 24000;
+            const float kick = k < 6000 ? 0.9f * (float) std::exp (-k / 1500.0) * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 60.0 * k / 48000.0) : 0.0f;
+            buffer.setSample (0, i, v);
+            buffer.setSample (1, i, v);
+            buffer.setSample (2, i, kick);
+            buffer.setSample (3, i, kick);
+        }
+        p.processBlock (buffer, midi);
+        scPeak = std::max (scPeak, p.meters.source[(size_t) ModSource::sidechain].load());
+        for (int i = 0; i < 256; ++i) out.push_back (buffer.getSample (0, i));
+    }
+    auto rmsOf = [&out] (int from, int to)
+    {
+        double sum = 0.0;
+        for (int i = from; i < to; ++i) sum += (double) out[(size_t) i] * out[(size_t) i];
+        return std::sqrt (sum / (to - from));
+    };
+    check (p.meters.sidechainConnected.load(), "the processor sees the sidechain");
+    check (rmsOf (24200, 25500) < 0.05, "a kick on the sidechain ducks the gate");
+    check (rmsOf (16000, 23000) > 0.25, "the gate opens between kicks");
+    check (scPeak > 0.5f, "the SC modulation source follows the kick");
+
+    // Mono track with a stereo sidechain: the sidechain channels are left alone.
+    OriginPsyProcessor mono;
+    auto monoLayout = mono.getBusesLayout();
+    monoLayout.inputBuses.getReference (0) = juce::AudioChannelSet::mono();
+    monoLayout.outputBuses.getReference (0) = juce::AudioChannelSet::mono();
+    monoLayout.inputBuses.getReference (1) = juce::AudioChannelSet::stereo();
+    check (mono.setBusesLayout (monoLayout), "mono with a stereo sidechain is supported");
+    setValue (mono, params::outGain, 12.0f);
+    mono.prepareToPlay (48000.0, 256);
+    juce::AudioBuffer<float> mb (3, 256);
+    for (int ch = 0; ch < 3; ++ch)
+        for (int i = 0; i < 256; ++i) mb.setSample (ch, i, 0.5f * std::sin ((float) i * 0.1f));
+    const float scBefore = mb.getSample (1, 10);
+    for (int i = 0; i < 20; ++i) mono.processBlock (mb, midi);
+    check (mb.getSample (1, 10) == scBefore, "the sidechain input is not processed as audio");
+}
+
 int screenshot (const juce::String& path, int module)
 {
     OriginPsyProcessor p;
@@ -491,6 +557,7 @@ int main (int argc, char** argv)
     state();
     modulation();
     presets();
+    sidechain();
     reorder();
     randomizer();
     latencyAndRatchet();

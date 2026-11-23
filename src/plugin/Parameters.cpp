@@ -185,7 +185,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         for (int b = 0; b < 3; ++b)
         {
             const juce::String n = juce::String ("Gate ") + bandNames[b] + " ";
-            g->addChild (choice (gateBand (b, "mode"), n + "Mode", { "Steps", "Euclid" }, 1));
+            g->addChild (choice (gateBand (b, "mode"), n + "Mode", { "Steps", "Euclid", "Sidechain" }, 1));
             g->addChild (integer (gateBand (b, "steps"), n + "Steps", 1, 32, defSteps[b]));
             g->addChild (integer (gateBand (b, "hits"), n + "Hits", 0, 32, defHits[b]));
             g->addChild (integer (gateBand (b, "rotate"), n + "Rotate", 0, 31, 0));
@@ -229,6 +229,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (choice (zapRoot, "Zap Root", noteNames(), 4));
         g->addChild (integer (zapOctave, "Zap Octave", 2, 7, 5));
         g->addChild (choice (zapOrder, "Zap Note Order", zapOrderNames(), 0));
+        g->addChild (choice (zapKey, "Zap Listens To", { "Input", "Sidechain" }, 0));
         g->addChild (flt (zapSweep, "Zap Sweep", Range (-48.0f, 48.0f, 0.1f), 24.0f, "st"));
         g->addChild (flt (zapSweepTime, "Zap Sweep Time", skewed (5.0f, 1000.0f, 80.0f), 80.0f, "ms"));
         g->addChild (flt (zapDecay, "Zap Decay", skewed (20.0f, 2000.0f, 300.0f), 300.0f, "ms"));
