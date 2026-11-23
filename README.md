@@ -80,6 +80,10 @@ The **MOD** row holds the sources: **LFO 1** and **LFO 2** (synced to the song, 
 
 The bar at the top lists factory presets by category (Init, Build-up, Lead FX, Bass, Pads, Glitch), then your own. **Save** stores the whole state (parameters, drawn gate steps and modulation) as a `.originpsy` file in `Documents/AMV/OriginPsy Presets`. Subfolders there show up too.
 
+### Randomize and Mutate
+
+Next to the presets: **Randomize** gives the modules in the chain new random settings, **Mutate** only nudges them a little (choices change now and then by one step). The chain, the output level, the macros, the modulation and the Brake button are left alone, and mixes, depths and feedback stay in a usable range. Save what you like as a preset.
+
 ## Building
 
 You need CMake 3.22 or newer and a C++20 compiler (Visual Studio 2022 on Windows, Xcode on macOS). JUCE 8.0.9 is downloaded automatically.

@@ -235,6 +235,45 @@ void modulation()
     check (healthy (run (all, 44100.0, 512, 44100 * 4)), "full modulation matrix stays bounded");
 }
 
+void randomizer()
+{
+    OriginPsyProcessor p;
+    juce::Random rng (42);
+    // Default chain: Vocal Acid, Polymeter Gate, Fractal Echo. Zap is not in it.
+    const float zapBefore = p.apvts.getRawParameterValue (params::zapSweep)->load();
+    const float slotBefore = p.apvts.getRawParameterValue (params::slotModule (0))->load();
+    const float outBefore = p.apvts.getRawParameterValue (params::outGain)->load();
+    PresetManager::randomize (p, false, rng);
+    check (p.apvts.getRawParameterValue (params::zapSweep)->load() == zapBefore, "randomize leaves modules outside the chain alone");
+    check (p.apvts.getRawParameterValue (params::slotModule (0))->load() == slotBefore
+               && p.apvts.getRawParameterValue (params::outGain)->load() == outBefore,
+           "randomize keeps the chain and the output level");
+    const float mix = p.apvts.getRawParameterValue (params::echoMix)->load();
+    check (mix >= 0.25f && mix <= 0.8f, "randomize keeps the mix usable");
+    check (p.apvts.getRawParameterValue (params::echoFeedback)->load() <= 0.7f + 1e-4f, "randomize keeps feedback short of runaway");
+    check (p.currentPresetName == "Random", "randomize names the result");
+
+    const float damp = p.apvts.getRawParameterValue (params::echoDamp)->load();
+    PresetManager::randomize (p, true, rng);
+    check (std::abs (p.apvts.getRawParameterValue (params::echoDamp)->load() - damp) <= 0.081f, "mutate only nudges a setting");
+    check (p.currentPresetName == "Random *", "mutate marks the name");
+
+    // Many rolls with every module in the chain stay healthy.
+    OriginPsyProcessor all;
+    setValue (all, params::slotModule (0), (float) ModuleType::zapResonator);
+    setValue (all, params::slotModule (1), (float) ModuleType::orbitDoppler);
+    setValue (all, params::slotModule (2), (float) ModuleType::fraktalEcho);
+    setValue (all, params::slotModule (3), (float) ModuleType::tapeStop);
+    all.prepareToPlay (48000.0, 512);
+    bool ok = true;
+    for (int i = 0; i < 12; ++i)
+    {
+        PresetManager::randomize (all, i % 3 == 2, rng);
+        ok = ok && healthy (run (all, 48000.0, 512, 24000));
+    }
+    check (ok, "random settings stay healthy");
+}
+
 void presets()
 {
     OriginPsyProcessor p;
@@ -321,6 +360,7 @@ int main (int argc, char** argv)
     state();
     modulation();
     presets();
+    randomizer();
 
     if (failures == 0) std::printf ("All plugin tests passed.\n");
     else std::printf ("%d plugin test(s) failed.\n", failures);

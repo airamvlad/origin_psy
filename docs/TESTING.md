@@ -74,6 +74,13 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] Bitwig automation of a modulated knob still works, and the modulation rides on top of it
 - [ ] Save the Bitwig project, reopen it: connections and depths are back
 
+## Randomize and Mutate
+
+- [ ] Randomize a few times: each result sounds different and usable, nothing blows up
+- [ ] Mutate: small changes around the current sound
+- [ ] Modules that are not in the chain keep their settings
+- [ ] Ctrl+Z in Bitwig undoes the change (the parameters are host automatable)
+
 ## Presets
 
 - [ ] Click through all factory presets with < and >: each one sounds different and nothing clicks or blows up
