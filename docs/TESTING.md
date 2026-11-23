@@ -10,6 +10,9 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] The window can be resized by dragging the corner
 - [ ] A saved and reopened project restores every setting, including drawn gate steps
 - [ ] Changing a slot's module or switching it ON/OFF makes no click
+- [ ] A slot's Dry/Wet knob blends that module smoothly; at 0 % the slot is silent (dry only)
+- [ ] S (Solo) on a slot plays only that slot; switching solo makes no click
+- [ ] LIMIT on: push Output to +12 dB, the meter stays under 0 dB and GR shows the reduction; LIMIT off: it clips
 - [ ] Tempo changes in Bitwig (138, 145, 150) and 7/8: the effects stay in time
 - [ ] CPU in Bitwig with all three modules on
 

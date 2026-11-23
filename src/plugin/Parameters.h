@@ -10,6 +10,10 @@ inline const juce::String outGain = "out_gain";
 
 inline juce::String slotModule (int i) { return "slot" + juce::String (i + 1) + "_module"; }
 inline juce::String slotBypass (int i) { return "slot" + juce::String (i + 1) + "_bypass"; }
+inline juce::String slotMix (int i) { return "slot" + juce::String (i + 1) + "_mix"; }
+inline juce::String slotSolo (int i) { return "slot" + juce::String (i + 1) + "_solo"; }
+inline const juce::String outLimit = "out_limit";
+inline const juce::String outCeiling = "out_ceiling";
 
 inline const juce::String echoTime = "echo_time";
 inline const juce::String echoRatio = "echo_ratio";
