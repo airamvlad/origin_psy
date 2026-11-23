@@ -41,10 +41,34 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] DROP: over the last 4 bars of the phrase the echo grows and the gate deepens; on beat 1 of the next phrase everything returns
 - [ ] Offset: the phrase start moves when the song does not start on bar 1
 
+## Zap Resonator
+
+- [ ] On a hi-hat loop: every hat fires a zap, and the zaps are in the key (Scale, Root)
+- [ ] Threshold up: only the loud hits fire; Note order Random and Hit strength sound different from Up
+- [ ] Sweep +24 falls onto the note, -24 rises onto it; Resonance 0 % sounds noisy, 100 % a clean tone
+- [ ] Mix 50 %: hats plus zaps; 100 %: only zaps
+
+## Orbit Doppler
+
+- [ ] On a lead: the sound goes round the head in time with the song (One lap = 1 bar)
+- [ ] The pitch bends up as it comes closer and down as it moves away; Doppler 0 % keeps the pitch
+- [ ] Fly-by: passes in front from left to right and back; Spiral: swings in close and out
+- [ ] No clicks when changing Path or One lap while playing
+
+## Tape Stop
+
+- [ ] Hold BRAKE: the sound slows down to a stop over the Length; let go: it is back at once (Stop) or spins up (Stop & Start)
+- [ ] Slow Down: holds an octave lower while BRAKE is held, then speeds back up
+- [ ] Trigger Every 4 bars: the stop ends exactly on the bar line and the next bar starts clean
+- [ ] Start with Every 4 bars: each 4 bar block starts with a spin-up
+- [ ] Automating Tape Brake in Bitwig works like holding the button
+- [ ] No clicks going in or out
+
 ## Modulation
 
 - [ ] Drag LFO 1 onto Echo Feedback: a blue ring appears and the white dot moves with the LFO in time with the song
-- [ ] Shift-drag the knob up and down: the ring grows and shrinks; right-click: Invert flips it, Remove deletes it
+- [ ] Shift-drag the knob up and down: the ring grows and shrinks; right-click: Up, Down and Both ways change the direction (the ring follows), Remove deletes it
+- [ ] Drag PHRASE onto a knob: the dot on the Phrase curve and the white dot on the knob climb together through the phrase
 - [ ] ENV on Vocal Formant: the formant follows how loud the input is
 - [ ] M1 (Space) turned up: more echo; M3 (Chop): the gate gets deeper
 - [ ] Bitwig automation of a modulated knob still works, and the modulation rides on top of it

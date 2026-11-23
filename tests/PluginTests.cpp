@@ -66,7 +66,7 @@ void parameters()
 {
     OriginPsyProcessor p;
     const auto& all = p.getParameters();
-    check (all.size() >= 85, "all module parameters are exposed to the host");
+    check (all.size() >= 109, "all module parameters are exposed to the host");
     juce::StringArray ids;
     for (auto* prm : all)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
@@ -121,10 +121,29 @@ void allModulesAndFraza()
     setValue (p, params::echoFeedback, 1.0f);
     setValue (p, params::vokalResonance, 1.0f);
     setValue (p, params::vokalCharacter, 2.0f);
+    setValue (p, params::slotModule (3), (float) ModuleType::zapResonator);
+    setValue (p, params::zapThreshold, -60.0f);
+    setValue (p, params::zapMix, 1.0f);
     p.prepareToPlay (48000.0, 256);
     const auto out = run (p, 48000.0, 256, 48000 * 8);
     check (healthy (out), "all modules with Drop and maximum settings stay bounded");
     check (p.apvts.getRawParameterValue (params::frazaTargets[0].id)->load() > 0.1f, "Drop sets the Phrase amounts");
+
+    OriginPsyProcessor o;
+    setValue (o, params::slotModule (0), (float) ModuleType::orbitDoppler);
+    setValue (o, params::slotModule (1), (float) ModuleType::zapResonator);
+    setValue (o, params::slotModule (2), (float) ModuleType::fraktalEcho);
+    setValue (o, params::orbitRadius, 30.0f);
+    setValue (o, params::orbitDoppler, 1.0f);
+    setValue (o, params::orbitRate, 0.0f);
+    setValue (o, params::slotModule (3), (float) ModuleType::tapeStop);
+    setValue (o, params::tapeTrigger, 1.0f); // every 2 bars
+    setValue (o, params::tapeMode, 1.0f);    // stop & start
+    for (double rate : { 44100.0, 96000.0 })
+    {
+        o.prepareToPlay (rate, 512);
+        check (healthy (run (o, rate, 512, (int) rate * 3)), "Orbit Doppler, Zap Resonator and Tape Stop stay bounded");
+    }
 }
 
 void state()
@@ -178,6 +197,30 @@ void modulation()
     check (slot.used() && slot.source == ModSource::macro1 && slot.destination == b.modulatableIndex (params::echoMix)
                && std::abs (slot.depth - 1.0f) < 1e-6f,
            "state restores the modulation matrix");
+
+    // Direction is saved too.
+    OriginPsyProcessor dir;
+    dir.matrix.clearAll();
+    const int ds = dir.matrix.connect (ModSource::lfo2, dir.modulatableIndex (params::echoDamp), -0.3f);
+    dir.matrix.setBipolar (ds, false);
+    juce::MemoryBlock dirData;
+    dir.getStateInformation (dirData);
+    OriginPsyProcessor dir2;
+    dir2.setStateInformation (dirData.getData(), (int) dirData.getSize());
+    check (! dir2.matrix.get (0).bipolar && dir2.matrix.get (0).source == ModSource::lfo2, "state restores the direction");
+
+    // PHRASE as a source: the default curve rises through the phrase.
+    OriginPsyProcessor ph;
+    ph.matrix.clearAll();
+    setValue (ph, params::frazaBars, 0.0f); // 8 bars = 13.7 s at 140 BPM
+    setValue (ph, params::echoMix, 0.0f);
+    const int phIdx = ph.modulatableIndex (params::echoMix);
+    ph.matrix.connect (ModSource::fraza, phIdx, 1.0f);
+    ph.prepareToPlay (48000.0, 512);
+    run (ph, 48000.0, 512, 48000 * 7);
+    const float phraseNow = ph.meters.frazaValue.load();
+    check (phraseNow > 0.4f && phraseNow < 0.6f, "half way through the phrase the curve is at half");
+    check (std::abs (ph.modulatedNormalised (phIdx) - phraseNow) < 0.02f, "PHRASE moves the knob it is dropped on");
 
     // Every modulatable parameter at once, with every source, stays bounded.
     OriginPsyProcessor all;

@@ -166,6 +166,42 @@ void OriginPsyProcessor::updateModules()
         band.pattern = gatePatterns[(size_t) b].load();
     }
     chain.gate.setParams (g);
+
+    // Zap Resonator.
+    ZapResonator::Params z;
+    z.thresholdDb = m (params::zapThreshold);
+    z.scale = (int) m (params::zapScale);
+    z.root = (int) m (params::zapRoot);
+    z.octave = (int) m (params::zapOctave);
+    z.order = (int) m (params::zapOrder);
+    z.sweep = m (params::zapSweep);
+    z.sweepMs = m (params::zapSweepTime);
+    z.decayMs = m (params::zapDecay);
+    z.resonance = m (params::zapResonance);
+    z.width = m (params::zapWidth);
+    z.mix = m (params::zapMix);
+    chain.zap.setParams (z);
+
+    // Orbit Doppler.
+    OrbitDoppler::Params o;
+    o.path = (int) m (params::orbitPath);
+    o.rate = (int) m (params::orbitRate);
+    o.radius = m (params::orbitRadius);
+    o.doppler = m (params::orbitDoppler);
+    o.distanceTone = m (params::orbitTone);
+    o.width = m (params::orbitWidth);
+    o.mix = m (params::orbitMix);
+    chain.orbit.setParams (o);
+
+    // Tape Stop. The Brake button is not modulated: it is read as it is.
+    TapeStop::Params tp;
+    tp.mode = (int) m (params::tapeMode);
+    tp.trigger = (int) m (params::tapeTrigger);
+    tp.brake = value (params::tapeBrake) > 0.5f;
+    tp.length = (int) m (params::tapeLength);
+    tp.curve = m (params::tapeCurve);
+    tp.mix = m (params::tapeMix);
+    chain.tape.setParams (tp);
 }
 
 void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -218,6 +254,13 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.vokalVowel = chain.vokal.getVowelPosition();
     meters.vokalAccent = chain.vokal.getAccent();
     for (int b = 0; b < 3; ++b) meters.gateStep[(size_t) b] = chain.gate.getStep (b);
+    meters.tapeSpeed = chain.tape.getSpeed();
+    meters.zapNote = chain.zap.getLastNote();
+    meters.zapHits = chain.zap.getHitCount();
+    meters.zapLevel = chain.zap.getLevel();
+    const auto orbitPos = chain.orbit.getPosition();
+    meters.orbitX = orbitPos.x;
+    meters.orbitY = orbitPos.y;
     meters.frazaPosition = phrasePos;
     meters.frazaValue = fraza;
     meters.bpm = t.bpm;
@@ -274,6 +317,7 @@ juce::ValueTree OriginPsyProcessor::createStateTree()
         m.setProperty ("source", (int) slot.source, nullptr);
         m.setProperty ("dest", modParams[(size_t) slot.destination]->paramID, nullptr);
         m.setProperty ("depth", slot.depth, nullptr);
+        m.setProperty ("bipolar", slot.bipolar, nullptr);
         mods.appendChild (m, nullptr);
     }
     state.removeChild (state.getChildWithName ("MODS"), nullptr);
@@ -301,7 +345,8 @@ void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
         const int dest = modulatableIndex (m.getProperty ("dest").toString());
         const int src = (int) m.getProperty ("source", 0);
         if (dest < 0 || src <= 0 || src >= numModSources || slot >= ModMatrix::numSlots) continue;
-        matrix.set (slot++, { (ModSource) src, dest, (float) m.getProperty ("depth", 0.0f) });
+        matrix.set (slot++, { (ModSource) src, dest, (float) m.getProperty ("depth", 0.0f),
+                              (bool) m.getProperty ("bipolar", isBipolar ((ModSource) src)) });
     }
     state.removeChild (state.getChildWithName ("MODS"), nullptr);
     apvts.replaceState (state);
