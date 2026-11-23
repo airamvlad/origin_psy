@@ -64,6 +64,14 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] Automating Tape Brake in Bitwig works like holding the button
 - [ ] No clicks going in or out
 
+## Spectral Ratchet
+
+- [ ] On a lead or pad: freeze steps hold the sound, pass steps let it through, in time with the song
+- [ ] Interval Scale up: each repeat climbs the scale; Octaves up: climbs in octaves
+- [ ] Mask Alternate combs and Walking band change the colour on each repeat
+- [ ] Adding it to a slot: Bitwig compensates the latency (the track stays in time with the others)
+- [ ] Mix 0 %: sounds exactly like the dry track
+
 ## Modulation
 
 - [ ] Drag LFO 1 onto Echo Feedback: a blue ring appears and the white dot moves with the LFO in time with the song

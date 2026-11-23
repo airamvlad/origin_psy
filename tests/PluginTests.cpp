@@ -66,7 +66,7 @@ void parameters()
 {
     OriginPsyProcessor p;
     const auto& all = p.getParameters();
-    check (all.size() >= 109, "all module parameters are exposed to the host");
+    check (all.size() >= 117, "all module parameters are exposed to the host");
     juce::StringArray ids;
     for (auto* prm : all)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
@@ -235,6 +235,24 @@ void modulation()
     check (healthy (run (all, 44100.0, 512, 44100 * 4)), "full modulation matrix stays bounded");
 }
 
+void latencyAndRatchet()
+{
+    OriginPsyProcessor p;
+    p.prepareToPlay (48000.0, 256);
+    check (p.getLatencySamples() == 0, "no latency without Spectral Ratchet");
+    setValue (p, params::slotModule (3), (float) ModuleType::spectralRatchet);
+    p.prepareToPlay (48000.0, 256);
+    check (p.getLatencySamples() == SpectralRatchet::latency, "Spectral Ratchet reports its latency");
+    check (healthy (run (p, 48000.0, 256, 48000 * 2)), "Spectral Ratchet in the chain stays bounded");
+
+    p.setRatchetPattern (0x1234u);
+    juce::MemoryBlock data;
+    p.getStateInformation (data);
+    OriginPsyProcessor b;
+    b.setStateInformation (data.getData(), (int) data.getSize());
+    check (b.getRatchetPattern() == 0x1234u, "state restores the ratchet steps");
+}
+
 void presets()
 {
     OriginPsyProcessor p;
@@ -321,6 +339,7 @@ int main (int argc, char** argv)
     state();
     modulation();
     presets();
+    latencyAndRatchet();
 
     if (failures == 0) std::printf ("All plugin tests passed.\n");
     else std::printf ("%d plugin test(s) failed.\n", failures);
