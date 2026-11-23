@@ -3,6 +3,7 @@
 #include "FraktalEcho.h"
 #include "OrbitDoppler.h"
 #include "PolimetarGate.h"
+#include "SpectralRatchet.h"
 #include "TapeStop.h"
 #include "VokalAcid.h"
 #include "ZapResonator.h"
@@ -13,8 +14,8 @@
 namespace originpsy
 {
 
-enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler, tapeStop };
-constexpr int numModuleTypes = 7;
+enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler, tapeStop, spectralRatchet };
+constexpr int numModuleTypes = 8;
 
 inline const char* moduleName (ModuleType t) noexcept
 {
@@ -26,6 +27,7 @@ inline const char* moduleName (ModuleType t) noexcept
         case ModuleType::zapResonator:  return "Zap Resonator";
         case ModuleType::orbitDoppler:  return "Orbit Doppler";
         case ModuleType::tapeStop:      return "Tape Stop";
+        case ModuleType::spectralRatchet: return "Spectral Ratchet";
         case ModuleType::empty:         break;
     }
     return "Empty";
@@ -78,6 +80,7 @@ public:
     ZapResonator zap;
     OrbitDoppler orbit;
     TapeStop tape;
+    SpectralRatchet ratchet;
 
     void prepare (double sampleRate, int maxBlock)
     {
@@ -88,6 +91,7 @@ public:
         zap.prepare (sampleRate, maxBlock);
         orbit.prepare (sampleRate, maxBlock);
         tape.prepare (sampleRate, maxBlock);
+        ratchet.prepare (sampleRate, maxBlock);
         fadeSamples = std::max (1, (int) (sampleRate * 0.008));
         blockSize = std::max (1, maxBlock);
         for (auto& d : dry) d.assign ((size_t) blockSize, 0.0f);
@@ -103,6 +107,7 @@ public:
         zap.reset();
         orbit.reset();
         tape.reset();
+        ratchet.reset();
         fadeGain = 1.0f;
         fadingOut = false;
         active = pending;
@@ -113,6 +118,14 @@ public:
     void setSlotMix (int slot, float mix) noexcept { slotMix[(size_t) slot] = std::clamp (mix, 0.0f, 1.0f); }
 
     void setLayout (const Layout& l) noexcept { pending = l; }
+
+    /** Latency of a layout in samples (only Spectral Ratchet has any). */
+    static int latencyOf (const Layout& l) noexcept
+    {
+        for (auto type : l.effective())
+            if (type == ModuleType::spectralRatchet) return SpectralRatchet::latency;
+        return 0;
+    }
     const Layout& activeLayout() const noexcept { return active; }
 
     void process (float* left, float* right, int numSamples, const Transport& t) noexcept
@@ -141,7 +154,11 @@ private:
             if (type == ModuleType::empty) continue;
             auto& ms = mixSmooth[(size_t) slot];
             ms.setTarget (slotMix[(size_t) slot]);
-            const bool blend = slotMix[(size_t) slot] < 1.0f || ms.current() < 0.9999f;
+            // Spectral Ratchet is late by its latency, so blending it with the
+            // undelayed input would comb. Its own (latency-matched) mix gets
+            // the slot's Dry/Wet instead, set by the processor.
+            const bool blend = type != ModuleType::spectralRatchet
+                               && (slotMix[(size_t) slot] < 1.0f || ms.current() < 0.9999f);
             if (blend)
             {
                 std::copy (left, left + numSamples, dry[0].begin());
@@ -155,6 +172,7 @@ private:
                 case ModuleType::zapResonator:  zap.process (left, right, numSamples, t); break;
                 case ModuleType::orbitDoppler:  orbit.process (left, right, numSamples, t); break;
                 case ModuleType::tapeStop:      tape.process (left, right, numSamples, t); break;
+                case ModuleType::spectralRatchet: ratchet.process (left, right, numSamples, t); break;
                 case ModuleType::empty: break;
             }
             if (blend)
@@ -203,6 +221,7 @@ private:
             case ModuleType::zapResonator:  zap.reset(); break;
             case ModuleType::orbitDoppler:  orbit.reset(); break;
             case ModuleType::tapeStop:      tape.reset(); break;
+            case ModuleType::spectralRatchet: ratchet.reset(); break;
             case ModuleType::empty: break;
         }
     }

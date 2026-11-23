@@ -263,6 +263,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         layout.add (std::move (g));
     }
 
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("ratchet", "Spectral Ratchet", " | ");
+        g->addChild (choice (ratchetRate, "Ratchet Rate", divisionNames(), 2));
+        g->addChild (integer (ratchetSteps, "Ratchet Steps", 1, 16, 8));
+        g->addChild (choice (ratchetInterval, "Ratchet Interval",
+                             { "Same", "Octaves up", "Octaves down", "Fifths up", "Scale up", "Scale down", "Random in scale" }, 4));
+        g->addChild (choice (ratchetScale, "Ratchet Scale", scaleNames(), 0));
+        g->addChild (choice (ratchetMask, "Ratchet Mask",
+                             { "None", "Comb A", "Comb B", "Alternate combs", "Lows only", "Highs only", "Walking band" }, 0));
+        g->addChild (percent (ratchetSmear, "Ratchet Smear", 0.15f));
+        g->addChild (flt (ratchetTilt, "Ratchet Tilt", Range (-1.0f, 1.0f, 0.001f), 0.0f, "amount"));
+        g->addChild (percent (ratchetMix, "Ratchet Mix", 1.0f));
+        layout.add (std::move (g));
+    }
+
     return layout;
 }
 

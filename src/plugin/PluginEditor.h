@@ -23,6 +23,7 @@ inline const juce::Colour amber { 0xffffb347 };
 inline const juce::Colour lime { 0xffa6ff4d };
 inline const juce::Colour blue { 0xff5aa9ff };
 inline const juce::Colour orange { 0xffff7a45 };
+inline const juce::Colour violet { 0xffb57bff };
 } // namespace colours
 
 class PsyLookAndFeel : public juce::LookAndFeel_V4
@@ -183,6 +184,22 @@ private:
     float reelAngle = 0.0f;
 };
 
+class RatchetPage : public juce::Component
+{
+public:
+    explicit RatchetPage (OriginPsyProcessor&);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+
+private:
+    juce::Rectangle<float> stepArea() const;
+
+    OriginPsyProcessor& proc;
+    Choice rate, interval, scale, mask;
+    Knob steps, smear, tilt, mix;
+};
+
 class GateRing : public juce::Component
 {
 public:
@@ -276,7 +293,8 @@ private:
     originpsy::PresetManager presets;
     std::vector<originpsy::PresetManager::Entry> entries;
     juce::ComboBox box;
-    juce::TextButton prev { "<" }, next { ">" }, save { "Save" };
+    juce::TextButton prev { "<" }, next { ">" }, save { "Save" }, randomize { "Randomize" }, mutate { "Mutate" };
+    juce::Random rng;
 };
 
 class SlotCard : public juce::Component
@@ -329,6 +347,7 @@ private:
     originpsy::ui::ZapPage zapPage;
     originpsy::ui::OrbitPage orbitPage;
     originpsy::ui::TapePage tapePage;
+    originpsy::ui::RatchetPage ratchetPage;
     originpsy::ui::FrazaStrip fraza;
     originpsy::ui::ModStrip modStrip;
     originpsy::ui::PresetBar presetBar;
