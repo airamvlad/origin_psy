@@ -40,3 +40,19 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] The position (bar X / 16) matches Bitwig
 - [ ] DROP: over the last 4 bars of the phrase the echo grows and the gate deepens; on beat 1 of the next phrase everything returns
 - [ ] Offset: the phrase start moves when the song does not start on bar 1
+
+## Modulation
+
+- [ ] Drag LFO 1 onto Echo Feedback: a blue ring appears and the white dot moves with the LFO in time with the song
+- [ ] Shift-drag the knob up and down: the ring grows and shrinks; right-click: Invert flips it, Remove deletes it
+- [ ] ENV on Vokal Formant: the formant follows how loud the input is
+- [ ] M1 (Space) turned up: more echo; M3 (Chop): the gate gets deeper
+- [ ] Bitwig automation of a modulated knob still works, and the modulation rides on top of it
+- [ ] Save the Bitwig project, reopen it: connections and depths are back
+
+## Presets
+
+- [ ] Click through all factory presets with < and >: each one sounds different and nothing clicks or blows up
+- [ ] Save a preset, load another, load yours again: everything (gate steps and modulation too) comes back
+- [ ] The file is in Documents/AMV/OriginPsy Presets
+- [ ] Reopening the project shows the preset name in the bar
