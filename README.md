@@ -78,7 +78,7 @@ The **MOD** row holds the sources: **LFO 1** and **LFO 2** (synced to the song, 
 
 ### Presets
 
-The bar at the top lists factory presets by category (Init, Build-up, Lead FX, Bass, Pads, Glitch), then your own. **Save** stores the whole state (parameters, drawn gate steps and modulation) as a `.originpsy` file in `Documents/AMV/OriginPsy Presets`. Subfolders there show up too.
+The bar at the top lists factory presets by category (Init, Full-on, Dark, Prog, Build-up, Lead FX, Bass, Pads, Glitch), then your own. The genre sets are starting points for a whole track style: **Full-on** is bright and busy (Hijaz, 1/16 grooves, zaps, a riser with a tape stop every 16 bars), **Dark** is low and twisted (Hungarian and harmonic minor, robot voice, 1/32 glitch swarms, tape slow-downs), **Prog** is deep and smooth (Dorian and natural minor, slow orbits, long LFOs, a 32 bar journey). **Save** stores the whole state (parameters, drawn gate steps and modulation) as a `.originpsy` file in `Documents/AMV/OriginPsy Presets`. Subfolders there show up too.
 
 ## Building
 

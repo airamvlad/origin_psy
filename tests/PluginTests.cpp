@@ -244,7 +244,13 @@ void presets()
     pm.setUserFolderForTests (tmp);
 
     const auto& factory = PresetManager::factoryPresets();
-    check (factory.size() >= 8, "there are factory presets");
+    check (factory.size() >= 24, "there are factory presets");
+    for (const char* genre : { "Full-on", "Dark", "Prog" })
+    {
+        int count = 0;
+        for (const auto& f : factory) count += juce::String (f.category) == genre ? 1 : 0;
+        check (count >= 4, "every genre has at least four presets");
+    }
     check (pm.list().size() == factory.size(), "no user presets in an empty folder");
     p.prepareToPlay (48000.0, 256);
     for (size_t i = 0; i < factory.size(); ++i)
