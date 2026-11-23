@@ -278,6 +278,22 @@ void OriginPsyProcessor::toggleGateStep (int band, int step)
     gatePatterns[(size_t) band] ^= (1u << step);
 }
 
+void OriginPsyProcessor::swapSlots (int a, int b)
+{
+    if (a == b || a < 0 || b < 0 || a >= Chain::numSlots || b >= Chain::numSlots) return;
+    for (const auto& id : { params::slotModule (a), params::slotBypass (a) })
+    {
+        const auto other = id == params::slotModule (a) ? params::slotModule (b) : params::slotBypass (b);
+        auto* pa = apvts.getParameter (id);
+        auto* pb = apvts.getParameter (other);
+        const float va = pa->getValue(), vb = pb->getValue();
+        pa->beginChangeGesture(); pb->beginChangeGesture();
+        pa->setValueNotifyingHost (vb);
+        pb->setValueNotifyingHost (va);
+        pa->endChangeGesture(); pb->endChangeGesture();
+    }
+}
+
 void OriginPsyProcessor::applyDropPreset()
 {
     for (const auto& target : params::frazaTargets)

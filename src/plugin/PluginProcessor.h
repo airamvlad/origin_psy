@@ -50,6 +50,9 @@ public:
     void setGatePattern (int band, uint32_t pattern);
     void toggleGateStep (int band, int step);
 
+    /** Swaps two slots of the chain (module and on/off), e.g. after a drag. */
+    void swapSlots (int a, int b);
+
     /** Sets the Fraza amounts to a ready made build-up (the Drop button). */
     void applyDropPreset();
 

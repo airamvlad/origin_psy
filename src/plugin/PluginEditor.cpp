@@ -1184,14 +1184,18 @@ void SlotCard::paint (juce::Graphics& g)
 
     g.setColour (selected ? colours::panelLight : colours::panel);
     g.fillRoundedRectangle (r, 8.0f);
-    g.setColour (selected ? accent : colours::outline);
-    g.drawRoundedRectangle (r.reduced (0.5f), 8.0f, selected ? 2.0f : 1.0f);
+    g.setColour (dropHover ? colours::text : (selected ? accent : colours::outline));
+    g.drawRoundedRectangle (r.reduced (0.5f), 8.0f, selected || dropHover ? 2.0f : 1.0f);
     g.setColour (accent.withAlpha (bypassed ? 0.3f : 1.0f));
     g.fillRoundedRectangle (r.withWidth (5.0f).reduced (0.0f, 10.0f).translated (6.0f, 0.0f), 2.0f);
 
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
     g.drawText ("SLOT " + juce::String (slot + 1), r.reduced (18.0f, 8.0f), juce::Justification::topLeft);
+    // Grip: the card can be dragged onto another slot.
+    g.setColour (colours::dim.withAlpha (0.6f));
+    for (int i = 0; i < 3; ++i)
+        g.fillRect (juce::Rectangle<float> (r.getRight() - 22.0f, 9.0f + 3.0f * (float) i, 10.0f, 1.2f));
 
     // A module plays in one slot only: say where it already is.
     for (int other = 0; other < slot; ++other)
@@ -1201,7 +1205,7 @@ void SlotCard::paint (juce::Graphics& g)
             g.setColour (colours::amber);
             g.setFont (juce::FontOptions (11.0f));
             g.drawText ("already in slot " + juce::String (other + 1) + ", this one is skipped",
-                        r.reduced (18.0f, 8.0f), juce::Justification::topRight);
+                        r.reduced (18.0f, 8.0f).withTrimmedRight (16.0f), juce::Justification::topRight);
             break;
         }
 }
@@ -1215,7 +1219,32 @@ void SlotCard::resized()
     module.setBounds (r.withSizeKeepingCentre (r.getWidth(), 28));
 }
 
-void SlotCard::mouseUp (const juce::MouseEvent&) { onSelect (moduleType()); }
+void SlotCard::mouseUp (const juce::MouseEvent& e)
+{
+    if (! e.mouseWasDraggedSinceMouseDown()) onSelect (moduleType());
+}
+
+void SlotCard::mouseDrag (const juce::MouseEvent& e)
+{
+    if (e.getDistanceFromDragStart() < 6) return;
+    if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor (this))
+        if (! container->isDragAndDropActive())
+            container->startDragging ("slot:" + juce::String (slot), this);
+}
+
+bool SlotCard::isInterestedInDragSource (const SourceDetails& d)
+{
+    const auto text = d.description.toString();
+    return text.startsWith ("slot:") && text.fromFirstOccurrenceOf ("slot:", false, false).getIntValue() != slot;
+}
+
+void SlotCard::itemDropped (const SourceDetails& d)
+{
+    dropHover = false;
+    proc.swapSlots (d.description.toString().fromFirstOccurrenceOf ("slot:", false, false).getIntValue(), slot);
+    if (auto* parent = getParentComponent()) parent->repaint();
+    onSelect (moduleType());
+}
 
 //==============================================================================
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
