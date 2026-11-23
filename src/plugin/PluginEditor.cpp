@@ -99,9 +99,93 @@ void PsyLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b,
 }
 
 //==============================================================================
-Knob::Knob (juce::AudioProcessorValueTreeState& state, const juce::String& paramId, const juce::String& name,
+juce::Colour originpsy::ui::sourceColour (ModSource s)
+{
+    switch (s)
+    {
+        case ModSource::lfo1:     return juce::Colour (0xff6ea8ff);
+        case ModSource::lfo2:     return juce::Colour (0xffa98bff);
+        case ModSource::envelope: return juce::Colour (0xff7dff9b);
+        case ModSource::macro1:
+        case ModSource::macro2:
+        case ModSource::macro3:
+        case ModSource::macro4:   return juce::Colour (0xffffe066);
+        case ModSource::fraza:    return colours::cyan;
+        case ModSource::none:     break;
+    }
+    return colours::dim;
+}
+
+//==============================================================================
+void ModSlider::mouseDown (const juce::MouseEvent& e)
+{
+    auto* p = processor ? processor() : nullptr;
+    const int idx = modIndex ? modIndex() : -1;
+    if (p == nullptr || idx < 0) { Slider::mouseDown (e); return; }
+
+    std::vector<int> mine;
+    for (int i = 0; i < ModMatrix::numSlots; ++i)
+    {
+        const auto slot = p->matrix.get (i);
+        if (slot.used() && slot.destination == idx) mine.push_back (i);
+    }
+
+    if (e.mods.isPopupMenu())
+    {
+        juce::PopupMenu menu;
+        if (mine.empty())
+            menu.addItem (-1, "Drag a source from the MOD row onto this knob", false);
+        for (int i : mine)
+        {
+            const auto slot = p->matrix.get (i);
+            const juce::String name = modSourceName (slot.source);
+            const juce::String depth = (slot.depth > 0 ? "+" : "") + juce::String (juce::roundToInt (slot.depth * 100.0f)) + " %";
+            menu.addSectionHeader (name + "  " + depth);
+            menu.addItem (1000 + i, "Invert " + name);
+            menu.addItem (2000 + i, "Remove " + name);
+        }
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                            [p, safe = juce::Component::SafePointer<ModSlider> (this)] (int result) {
+                                if (result >= 2000) p->matrix.clear (result - 2000);
+                                else if (result >= 1000)
+                                    p->matrix.setDepth (result - 1000, -p->matrix.get (result - 1000).depth);
+                                if (safe != nullptr && safe->getParentComponent() != nullptr)
+                                    safe->getParentComponent()->repaint();
+                            });
+        return;
+    }
+
+    if (e.mods.isShiftDown() && ! mine.empty())
+    {
+        depthSlot = mine.back();
+        depthStart = p->matrix.get (depthSlot).depth;
+        return;
+    }
+    Slider::mouseDown (e);
+}
+
+void ModSlider::mouseDrag (const juce::MouseEvent& e)
+{
+    if (depthSlot >= 0)
+    {
+        if (auto* p = processor ? processor() : nullptr)
+            p->matrix.setDepth (depthSlot, depthStart - (float) e.getDistanceFromDragStartY() / 150.0f);
+        if (auto* parent = getParentComponent()) parent->repaint();
+        return;
+    }
+    Slider::mouseDrag (e);
+}
+
+void ModSlider::mouseUp (const juce::MouseEvent& e)
+{
+    if (depthSlot >= 0) { depthSlot = -1; return; }
+    Slider::mouseUp (e);
+}
+
+//==============================================================================
+Knob::Knob (juce::AudioProcessorValueTreeState& state, const juce::String& id, const juce::String& name,
             juce::Colour accent, bool horizontal)
-    : compact (horizontal)
+    : paramId (id), compact (horizontal)
 {
     slider.setSliderStyle (compact ? juce::Slider::LinearHorizontal : juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 74, 14);
@@ -112,12 +196,30 @@ Knob::Knob (juce::AudioProcessorValueTreeState& state, const juce::String& param
     slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
     slider.setColour (juce::Slider::textBoxTextColourId, colours::text);
+    slider.modIndex = [this] { return modIndex(); };
+    slider.processor = [this] { return findProcessor(); };
     addAndMakeVisible (slider);
     label.setText (name, juce::dontSendNotification);
     label.setJustificationType (juce::Justification::centred);
     label.setFont (juce::FontOptions (11.5f));
+    label.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (label);
     attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (state, paramId, slider);
+    if (auto* p = state.getParameter (paramId))
+        slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
+}
+
+OriginPsyProcessor* Knob::findProcessor() const
+{
+    if (auto* editor = findParentComponentOfClass<OriginPsyEditor>()) return &editor->getProcessor();
+    return nullptr;
+}
+
+int Knob::modIndex() const
+{
+    if (cachedIndex == -2)
+        if (auto* p = findProcessor()) cachedIndex = p->modulatableIndex (paramId);
+    return cachedIndex < 0 ? -1 : cachedIndex;
 }
 
 void Knob::resized()
@@ -125,7 +227,7 @@ void Knob::resized()
     auto r = getLocalBounds();
     if (compact)
     {
-        label.setBounds (r.removeFromTop (16));
+        if (label.getText().isNotEmpty()) label.setBounds (r.removeFromTop (16));
         slider.setBounds (r);
         return;
     }
@@ -133,6 +235,105 @@ void Knob::resized()
     slider.setBounds (r);
 }
 
+bool Knob::isInterestedInDragSource (const SourceDetails& d)
+{
+    return d.description.toString().startsWith ("mod:") && modIndex() >= 0;
+}
+
+void Knob::itemDropped (const SourceDetails& d)
+{
+    dragOver = false;
+    const int src = d.description.toString().fromFirstOccurrenceOf ("mod:", false, false).getIntValue();
+    if (auto* p = findProcessor(); p != nullptr && src > 0 && src < numModSources && modIndex() >= 0)
+        p->matrix.connect ((ModSource) src, modIndex(), 0.25f);
+    repaint();
+}
+
+void Knob::paintOverChildren (juce::Graphics& g)
+{
+    if (compact) return;
+    auto* p = findProcessor();
+    const int idx = modIndex();
+    if (p == nullptr || idx < 0) return;
+
+    const auto area = slider.getBounds().withTrimmedBottom (14).toFloat().reduced (4.0f);
+    const float radius = std::min (area.getWidth(), area.getHeight()) * 0.5f;
+    const auto centre = area.getCentre();
+    const auto rotary = slider.getRotaryParameters();
+    auto angleOf = [&] (float norm) {
+        return rotary.startAngleRadians + juce::jlimit (0.0f, 1.0f, norm) * (rotary.endAngleRadians - rotary.startAngleRadians);
+    };
+
+    if (dragOver)
+    {
+        g.setColour (colours::text.withAlpha (0.5f));
+        g.drawEllipse (juce::Rectangle<float> (radius * 2.0f + 6.0f, radius * 2.0f + 6.0f).withCentre (centre), 1.5f);
+    }
+
+    const float base = p->getModulatableParameters()[(size_t) idx]->getValue();
+    int ring = 0;
+    bool any = false;
+    for (int i = 0; i < ModMatrix::numSlots; ++i)
+    {
+        const auto slot = p->matrix.get (i);
+        if (! slot.used() || slot.destination != idx) continue;
+        any = true;
+        const float lo = isBipolar (slot.source) ? base - std::abs (slot.depth) : std::min (base, base + slot.depth);
+        const float hi = isBipolar (slot.source) ? base + std::abs (slot.depth) : std::max (base, base + slot.depth);
+        const float r = radius + 1.5f + 3.0f * (float) ring++;
+        juce::Path arc;
+        arc.addCentredArc (centre.x, centre.y, r, r, 0.0f, angleOf (lo), angleOf (hi), true);
+        g.setColour (sourceColour (slot.source).withAlpha (slot.depth < 0 ? 0.55f : 0.9f));
+        g.strokePath (arc, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    if (any)
+    {
+        // Where the parameter really is right now.
+        const float a = angleOf (p->modulatedNormalised (idx));
+        const float r = radius - 3.0f;
+        const juce::Point<float> dot (centre.x + r * std::sin (a), centre.y - r * std::cos (a));
+        g.setColour (colours::text);
+        g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre (dot));
+    }
+}
+
+//==============================================================================
+void SourceChip::paint (juce::Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat().reduced (1.0f);
+    const auto c = sourceColour (source);
+    g.setColour (c.withAlpha (0.15f));
+    g.fillRoundedRectangle (r, 5.0f);
+    g.setColour (c);
+    g.drawRoundedRectangle (r, 5.0f, 1.2f);
+
+    // Live value as a thin bar along the bottom.
+    const float v = proc.meters.source[(size_t) source].load();
+    auto bar = r.reduced (5.0f, 0.0f).removeFromBottom (4.0f).translated (0.0f, -3.0f);
+    if (isBipolar (source))
+    {
+        const float mid = bar.getCentreX(), x = mid + v * bar.getWidth() * 0.5f;
+        g.fillRect (juce::Rectangle<float>::leftTopRightBottom (std::min (mid, x), bar.getY(), std::max (mid, x), bar.getBottom()));
+    }
+    else
+    {
+        g.fillRect (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, v)));
+    }
+
+    g.setColour (colours::text);
+    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    g.drawText (modSourceName (source), r.withTrimmedBottom (6.0f), juce::Justification::centred);
+}
+
+void SourceChip::mouseDrag (const juce::MouseEvent&)
+{
+    if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor (this))
+        if (! container->isDragAndDropActive())
+            container->startDragging ("mod:" + juce::String ((int) source), this);
+}
+
+//==============================================================================
 Choice::Choice (juce::AudioProcessorValueTreeState& state, const juce::String& paramId, const juce::String& name)
 {
     if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (state.getParameter (paramId)))
@@ -524,6 +725,148 @@ void FrazaStrip::resized()
 }
 
 //==============================================================================
+ModStrip::ModStrip (OriginPsyProcessor& p) : proc (p)
+{
+    for (int s = 1; s < numModSources; ++s)
+    {
+        chips.push_back (std::make_unique<SourceChip> (p, (ModSource) s));
+        chips.back()->setTooltip (juce::String ("Drag ") + modSourceName ((ModSource) s) + " onto a knob");
+        addAndMakeVisible (*chips.back());
+    }
+    for (int i = 0; i < 2; ++i)
+    {
+        lfoControls.push_back (std::make_unique<Choice> (p.apvts, params::lfoRate (i), "Rate"));
+        lfoControls.push_back (std::make_unique<Choice> (p.apvts, params::lfoShape (i), "Shape"));
+    }
+    for (int i = 0; i < 4; ++i)
+        macros.push_back (std::make_unique<Knob> (p.apvts, params::macro (i), "", sourceColour (ModSource::macro1), true));
+    for (auto& c : lfoControls) addAndMakeVisible (*c);
+    for (auto& k : macros) addAndMakeVisible (*k);
+}
+
+void ModStrip::paint (juce::Graphics& g)
+{
+    drawPanel (g, getLocalBounds().toFloat(), colours::text, "MOD");
+    g.setColour (colours::dim);
+    g.setFont (juce::FontOptions (11.5f));
+    g.drawText ("Drag a source onto a knob. Shift-drag the knob to set depth, right-click it to invert or remove.",
+                getLocalBounds().reduced (12, 6).removeFromTop (18), juce::Justification::topRight);
+}
+
+void ModStrip::resized()
+{
+    auto r = getLocalBounds().reduced (12, 0).withTrimmedTop (30).withTrimmedBottom (8);
+    auto chip = [this] (ModSource s) -> SourceChip& { return *chips[(size_t) s - 1]; };
+
+    for (int i = 0; i < 2; ++i)
+    {
+        chip (i == 0 ? ModSource::lfo1 : ModSource::lfo2).setBounds (r.removeFromLeft (64).withTrimmedTop (8));
+        r.removeFromLeft (6);
+        lfoControls[(size_t) i * 2]->setBounds (r.removeFromLeft (78));
+        r.removeFromLeft (4);
+        lfoControls[(size_t) i * 2 + 1]->setBounds (r.removeFromLeft (88));
+        r.removeFromLeft (16);
+    }
+    chip (ModSource::envelope).setBounds (r.removeFromLeft (64).withTrimmedTop (8));
+    r.removeFromLeft (16);
+
+    chip (ModSource::fraza).setBounds (r.removeFromRight (76).withTrimmedTop (8));
+    r.removeFromRight (16);
+    const int w = r.getWidth() / 4;
+    for (int i = 0; i < 4; ++i)
+    {
+        auto cell = r.removeFromLeft (w).reduced (3, 0);
+        chip ((ModSource) ((int) ModSource::macro1 + i)).setBounds (cell.removeFromTop (22));
+        cell.removeFromTop (2);
+        macros[(size_t) i]->setBounds (cell);
+    }
+}
+
+//==============================================================================
+PresetBar::PresetBar (OriginPsyProcessor& p) : proc (p), presets (p)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &box, &prev, &next, &save })
+        addAndMakeVisible (c);
+    box.setTextWhenNothingSelected ("Init");
+    box.onChange = [this] {
+        const int id = box.getSelectedId();
+        if (id > 0) loadIndex (id - 1);
+    };
+    prev.onClick = [this] { loadIndex (juce::jmax (0, box.getSelectedId() - 2)); };
+    next.onClick = [this] { loadIndex (juce::jmin ((int) entries.size() - 1, box.getSelectedId())); };
+    save.onClick = [this] { askToSave(); };
+    prev.setTooltip ("Previous preset");
+    next.setTooltip ("Next preset");
+    save.setTooltip ("Save as a user preset in Documents/AMV/OriginPsy Presets");
+    refresh();
+}
+
+void PresetBar::refresh()
+{
+    entries = presets.list();
+    box.clear (juce::dontSendNotification);
+    juce::String category;
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        if (entries[i].category != category)
+        {
+            category = entries[i].category;
+            box.addSectionHeading (category);
+        }
+        box.addItem (entries[i].name, (int) i + 1);
+    }
+    syncName();
+}
+
+void PresetBar::syncName()
+{
+    shownName = proc.currentPresetName;
+    for (size_t i = 0; i < entries.size(); ++i)
+        if (entries[i].name == shownName)
+        {
+            box.setSelectedId ((int) i + 1, juce::dontSendNotification);
+            return;
+        }
+    box.setText (shownName, juce::dontSendNotification);
+}
+
+void PresetBar::loadIndex (int index)
+{
+    if (index < 0 || index >= (int) entries.size()) return;
+    if (presets.load (entries[(size_t) index]))
+        box.setSelectedId (index + 1, juce::dontSendNotification);
+    shownName = proc.currentPresetName;
+    if (auto* top = getTopLevelComponent()) top->repaint();
+}
+
+void PresetBar::askToSave()
+{
+    auto* w = new juce::AlertWindow ("Save preset", "Name of the preset:", juce::MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("name", proc.currentPresetName);
+    w->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<PresetBar> safe (this);
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w] (int result) {
+                            if (result != 1 || safe == nullptr) return;
+                            safe->presets.save (w->getTextEditorContents ("name"));
+                            safe->refresh();
+                        }),
+                        true);
+}
+
+void PresetBar::resized()
+{
+    auto r = getLocalBounds();
+    save.setBounds (r.removeFromRight (60));
+    r.removeFromRight (6);
+    next.setBounds (r.removeFromRight (28));
+    r.removeFromRight (4);
+    prev.setBounds (r.removeFromLeft (28));
+    r.removeFromLeft (4);
+    box.setBounds (r);
+}
+
+//==============================================================================
 SlotCard::SlotCard (OriginPsyProcessor& p, int s, std::function<void (int)> select)
     : proc (p), slot (s), onSelect (std::move (select))
 {
@@ -592,7 +935,7 @@ void SlotCard::mouseUp (const juce::MouseEvent&) { onSelect (moduleType()); }
 //==============================================================================
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
-      echoPage (p), vokalPage (p), gatePage (p), fraza (p),
+      echoPage (p), vokalPage (p), gatePage (p), fraza (p), modStrip (p), presetBar (p),
       output (p.apvts, params::outGain, "Output", colours::cyan, true)
 {
     setLookAndFeel (&lnf);
@@ -605,13 +948,15 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addChildComponent (vokalPage);
     addChildComponent (gatePage);
     addAndMakeVisible (fraza);
+    addAndMakeVisible (modStrip);
+    addAndMakeVisible (presetBar);
     addAndMakeVisible (output);
 
     showModule (cards.front()->moduleType() > 0 ? cards.front()->moduleType() : (int) ModuleType::fraktalEcho);
     setResizable (true, true);
-    setResizeLimits (1040, 700, 2080, 1400);
-    if (auto* c = getConstrainer()) c->setFixedAspectRatio (1040.0 / 700.0);
-    setSize (1040, 700);
+    setResizeLimits (1040, 790, 2080, 1580);
+    if (auto* c = getConstrainer()) c->setFixedAspectRatio (1040.0 / 790.0);
+    setSize (1040, 790);
     startTimerHz (30);
 }
 
@@ -645,9 +990,7 @@ void OriginPsyEditor::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (12.0f));
     const juce::String tempo = juce::String (proc.meters.bpm.load(), 1) + " BPM"
                                + (proc.meters.hostPlaying.load() ? "" : "  (internal clock)");
-    g.drawText (tempo, 170, 20, 240, 20, juce::Justification::left);
-    g.drawText ("Click a slot to open its module. A module plays in one slot only.",
-                420, 20, 420, 20, juce::Justification::left);
+    g.drawText (tempo, 170, 20, 150, 20, juce::Justification::left);
 }
 
 void OriginPsyEditor::resized()
@@ -663,8 +1006,10 @@ void OriginPsyEditor::resized()
     for (int i = 0; i < Chain::numSlots; ++i)
         place (*cards[(size_t) i], { 16 + i * 255, 60, 243, 76 });
     for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage })
-        place (*page, { 16, 148, 1008, 316 });
-    place (fraza, { 16, 476, 1008, 208 });
+        place (*page, { 16, 248, 1008, 316 });
+    place (modStrip, { 16, 148, 1008, 88 });
+    place (fraza, { 16, 576, 1008, 208 });
+    place (presetBar, { 330, 14, 420, 30 });
     place (output, { 880, 4, 144, 48 });
 }
 
@@ -675,5 +1020,10 @@ void OriginPsyEditor::timerCallback()
     if (echoPage.isVisible()) echoPage.repaint();
     fraza.view.repaint();
     for (auto& c : cards) c->repaint();
-    repaint (getLocalBounds().withHeight (getHeight() * 56 / 700));
+    modStrip.repaint();
+    // Knobs show their modulation live.
+    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage })
+        if (page->isVisible()) page->repaint();
+    if (proc.currentPresetName != presetBar.shownName) presetBar.syncName();
+    repaint (getLocalBounds().withHeight (getHeight() * 56 / 790));
 }

@@ -18,8 +18,8 @@ OriginPsy is a chain of four slots that each take one of six modules, plus Fraza
 2. Fraktal Echo (done)
 3. Vokal Acid (done)
 4. Polimetar Gate (done)
-5. Fraza and Drop (done); drag and drop modulation and presets (next)
-6. Zap Rezonator and Orbit Doppler
+5. Fraza and Drop (done); drag and drop modulation and presets (done)
+6. Zap Rezonator and Orbit Doppler (next)
 7. Spektral Ratchet (FFT, latency reported to the host)
 8. Final pass: CPU, presets for every module, manual, AU build
 

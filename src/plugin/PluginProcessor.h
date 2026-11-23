@@ -3,11 +3,14 @@
 #include "Parameters.h"
 #include "dsp/Chain.h"
 #include "dsp/Fraza.h"
+#include "dsp/Modulation.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <array>
 #include <atomic>
+#include <unordered_map>
+#include <vector>
 
 class OriginPsyProcessor : public juce::AudioProcessor
 {
@@ -61,22 +64,47 @@ public:
         std::atomic<float> frazaValue { 0.0f };
         std::atomic<double> bpm { 140.0 };
         std::atomic<bool> hostPlaying { false };
+        std::array<std::atomic<float>, originpsy::numModSources> source {};
     } meters;
+
+    //==============================================================================
+    // Modulation matrix. Destinations are indices into getModulatableParameters().
+    originpsy::ModMatrix matrix;
+    const std::vector<juce::RangedAudioParameter*>& getModulatableParameters() const noexcept { return modParams; }
+    int modulatableIndex (const juce::String& paramId) const
+    {
+        const auto it = modIndex.find (paramId);
+        return it == modIndex.end() ? -1 : it->second;
+    }
+    /** The value a modulatable parameter really has after modulation (0..1). */
+    float modulatedNormalised (int index) const noexcept { return modNorm[(size_t) index].load (std::memory_order_relaxed); }
+
+    //==============================================================================
+    // Presets: the whole state, including gate patterns and modulation.
+    juce::ValueTree createStateTree();
+    void loadStateTree (const juce::ValueTree& state);
+    juce::String currentPresetName { "Init" };
 
     /** The tree of echoes as it is set now (for the editor's drawing). */
     int getEchoTaps (std::array<originpsy::FraktalEcho::Tap, originpsy::FraktalEcho::maxTaps>& out) const;
 
 private:
     originpsy::Transport readTransport (int numSamples);
-    void updateModules (float fraza);
+    void updateModules();
+    void computeModulation (const originpsy::Transport&, float fraza, const float* left, const float* right, int numSamples);
     float value (const juce::String& id) const { return apvts.getRawParameterValue (id)->load(); }
-    float modulated (const juce::String& id, int targetIndex, float fraza) const;
+    float m (const juce::String& id) const; // value after modulation
 
     originpsy::Chain chain;
     originpsy::InternalClock clock;
     double sampleRate = 48000.0;
     juce::SmoothedValue<float> outGain;
     std::vector<float> monoScratch;
+    originpsy::EnvelopeFollower envelope;
+    std::vector<juce::RangedAudioParameter*> modParams;
+    std::unordered_map<juce::String, int> modIndex;
+    std::unique_ptr<std::atomic<float>[]> modNorm;
+    std::vector<int> frazaTargetOf;
     std::array<std::atomic<uint32_t>, 3> gatePatterns { { 0x1111u, 0x15u, 0x1249u } };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OriginPsyProcessor)

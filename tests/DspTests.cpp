@@ -1,5 +1,6 @@
 #include "dsp/Chain.h"
 #include "dsp/Fraza.h"
+#include "dsp/Modulation.h"
 #include "dsp/Scales.h"
 
 #include <chrono>
@@ -327,6 +328,51 @@ void performanceTest()
     std::printf ("CPU: all three modules = %.2f %% of one core at 48 kHz\n", load);
     check (allFinite (l), "full chain output is finite");
 }
+
+void modulationTests()
+{
+    // LFO 1/4 rate: one cycle per quarter note, locked to the song position.
+    check (near (Lfo::value (Lfo::sine, 4, 0.25), 1.0, 1e-5), "sine LFO peaks a quarter of the way through");
+    check (near (Lfo::value (Lfo::sine, 4, 3.25), 1.0, 1e-5), "LFO repeats every cycle");
+    check (near (Lfo::value (Lfo::triangle, 4, 0.5), 1.0, 1e-5), "triangle peaks half way");
+    check (near (Lfo::value (Lfo::sawUp, 6, 2.0), 0.0, 1e-5), "1 bar saw is at zero half way through the bar");
+    check (Lfo::value (Lfo::square, 4, 0.1) > 0.0f && Lfo::value (Lfo::square, 4, 0.6) < 0.0f, "square flips half way");
+    bool same = true, varies = false, inRange = true;
+    for (int c = 0; c < 64; ++c)
+    {
+        const float a = Lfo::value (Lfo::sampleHold, 4, c + 0.1), b = Lfo::value (Lfo::sampleHold, 4, c + 0.9);
+        same = same && near (a, b, 1e-9);
+        varies = varies || ! near (a, Lfo::value (Lfo::sampleHold, 4, 0.5), 1e-3);
+        inRange = inRange && a >= -1.0f && a <= 1.0f;
+    }
+    check (same, "random LFO holds its value for a whole cycle");
+    check (varies, "random LFO changes between cycles");
+    check (inRange, "random LFO stays in -1..1");
+
+    ModMatrix m;
+    check (m.connect (ModSource::macro1, 3, 0.5f) == 0, "first connection takes slot 0");
+    check (m.connect (ModSource::macro1, 3, 0.9f) == 0, "connecting the same pair again reuses its slot");
+    m.connect (ModSource::lfo1, 3, -0.25f);
+    std::array<float, numModSources> values {};
+    values[(size_t) ModSource::macro1] = 1.0f;
+    values[(size_t) ModSource::lfo1] = 0.5f;
+    check (near (m.offsetFor (3, values), 0.5 - 0.125, 1e-6), "offset sums depth x source value");
+    check (near (m.offsetFor (4, values), 0.0, 1e-9), "other parameters are untouched");
+    m.setDepth (0, 3.0f);
+    check (near (m.get (0).depth, 1.0, 1e-9), "depth is clamped to 1");
+    for (int i = 0; i < ModMatrix::numSlots; ++i) m.connect (ModSource::envelope, 10 + i, 0.1f);
+    check (m.connect (ModSource::fraza, 99, 0.1f) == -1, "a full matrix refuses new connections");
+    m.clearAll();
+    check (! m.get (0).used() && near (m.offsetFor (3, values), 0.0, 1e-9), "clear all removes every connection");
+
+    EnvelopeFollower env;
+    env.prepare (sr);
+    std::vector<float> loud ((size_t) sr / 10, 1.0f), quiet ((size_t) sr, 0.0f);
+    env.process (loud.data(), loud.data(), (int) loud.size());
+    check (env.value() > 0.95f, "envelope follows a full scale signal");
+    env.process (quiet.data(), nullptr, (int) quiet.size());
+    check (env.value() < 0.05f, "envelope falls back in silence");
+}
 } // namespace
 
 int main()
@@ -338,6 +384,7 @@ int main()
     vokalTests();
     gateTests();
     chainTests();
+    modulationTests();
     performanceTest();
 
     if (failures == 0) std::printf ("All DSP tests passed.\n");

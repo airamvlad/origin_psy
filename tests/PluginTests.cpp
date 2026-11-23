@@ -4,6 +4,7 @@
 #include "plugin/Parameters.h"
 #include "plugin/PluginEditor.h"
 #include "plugin/PluginProcessor.h"
+#include "plugin/Presets.h"
 
 #include <cmath>
 #include <cstdio>
@@ -65,7 +66,7 @@ void parameters()
 {
     OriginPsyProcessor p;
     const auto& all = p.getParameters();
-    check (all.size() >= 77, "all module parameters are exposed to the host");
+    check (all.size() >= 85, "all module parameters are exposed to the host");
     juce::StringArray ids;
     for (auto* prm : all)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
@@ -149,6 +150,101 @@ void state()
     check (b.getGatePattern (1) == 0xA5A4u, "clicking a step toggles it");
 }
 
+
+void modulation()
+{
+    OriginPsyProcessor p;
+    setValue (p, params::slotModule (0), (float) ModuleType::fraktalEcho);
+    setValue (p, params::echoMix, 0.0f);
+    const int dest = p.modulatableIndex (params::echoMix);
+    check (dest >= 0, "echo mix can be modulated");
+    check (p.modulatableIndex (params::outGain) < 0 && p.modulatableIndex (params::macro (0)) < 0,
+           "output gain and macros are not modulation targets");
+    check (p.matrix.get (0).source == ModSource::macro1, "a new instance starts with the macros wired");
+    p.matrix.clearAll();
+    p.matrix.connect (ModSource::macro1, dest, 1.0f);
+    setValue (p, params::macro (0), 0.6f);
+    p.prepareToPlay (48000.0, 256);
+    const auto out = run (p, 48000.0, 256, 4800);
+    check (healthy (out), "modulated processor stays healthy");
+    check (std::abs (p.modulatedNormalised (dest) - 0.6f) < 0.02f, "macro 1 at 60 % moves echo mix by 60 %");
+    check (p.apvts.getRawParameterValue (params::echoMix)->load() < 0.001f, "modulation leaves the knob where it is");
+
+    juce::MemoryBlock data;
+    p.getStateInformation (data);
+    OriginPsyProcessor b;
+    b.setStateInformation (data.getData(), (int) data.getSize());
+    const auto slot = b.matrix.get (0);
+    check (slot.used() && slot.source == ModSource::macro1 && slot.destination == b.modulatableIndex (params::echoMix)
+               && std::abs (slot.depth - 1.0f) < 1e-6f,
+           "state restores the modulation matrix");
+
+    // Every modulatable parameter at once, with every source, stays bounded.
+    OriginPsyProcessor all;
+    all.applyDropPreset();
+    setValue (all, params::slotModule (1), (float) ModuleType::vokalAcid);
+    setValue (all, params::slotModule (2), (float) ModuleType::polimetarGate);
+    const auto n = (int) all.getModulatableParameters().size();
+    for (int i = 0; i < ModMatrix::numSlots; ++i)
+        all.matrix.connect ((ModSource) (1 + i % (numModSources - 1)), (i * 7) % n, i % 2 == 0 ? 1.0f : -1.0f);
+    for (int i = 0; i < 4; ++i) setValue (all, params::macro (i), 1.0f);
+    all.prepareToPlay (44100.0, 512);
+    check (healthy (run (all, 44100.0, 512, 44100 * 4)), "full modulation matrix stays bounded");
+}
+
+void presets()
+{
+    OriginPsyProcessor p;
+    PresetManager pm (p);
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("originpsy_preset_test");
+    tmp.deleteRecursively();
+    pm.setUserFolderForTests (tmp);
+
+    const auto& factory = PresetManager::factoryPresets();
+    check (factory.size() >= 8, "there are factory presets");
+    check (pm.list().size() == factory.size(), "no user presets in an empty folder");
+    p.prepareToPlay (48000.0, 256);
+    for (size_t i = 0; i < factory.size(); ++i)
+    {
+        check (pm.loadFactory ((int) i), "factory preset loads");
+        check (p.currentPresetName == factory[i].name, "loading a preset sets its name");
+        bool macro1Wired = false;
+        for (int s = 0; s < ModMatrix::numSlots; ++s)
+            macro1Wired = macro1Wired || p.matrix.get (s).source == ModSource::macro1;
+        check (macro1Wired, "factory presets wire macro 1");
+        const auto out = run (p, 48000.0, 256, 48000 * 2);
+        if (! healthy (out)) std::printf ("  unhealthy preset: %s\n", factory[i].name);
+        check (healthy (out), "factory preset output stays bounded");
+    }
+
+    // User preset round trip.
+    pm.loadFactory (3);
+    setValue (p, params::echoSpread, 5.0f);
+    p.setGatePattern (2, 0xF0F0u);
+    p.matrix.connect (ModSource::lfo2, p.modulatableIndex (params::vokalDrive), -0.4f);
+    const auto file = pm.save ("My: Preset");
+    check (file.existsAsFile(), "saving writes a preset file");
+    check (file.getParentDirectory() == tmp, "user presets go to the user folder");
+
+    pm.loadFactory (0);
+    check ((int) p.apvts.getRawParameterValue (params::echoSpread)->load() != 5, "Init resets the parameters");
+    const auto entries = pm.list();
+    check (entries.size() == factory.size() + 1 && ! entries.back().factory, "the saved preset is listed as a user preset");
+    check (pm.load (entries.back()), "user preset loads");
+    check ((int) p.apvts.getRawParameterValue (params::echoSpread)->load() == 5, "user preset restores parameters");
+    check (p.getGatePattern (2) == 0xF0F0u, "user preset restores gate steps");
+    bool found = false;
+    for (int s = 0; s < ModMatrix::numSlots; ++s)
+    {
+        const auto slot = p.matrix.get (s);
+        found = found || (slot.source == ModSource::lfo2 && slot.destination == p.modulatableIndex (params::vokalDrive)
+                          && std::abs (slot.depth + 0.4f) < 1e-6f);
+    }
+    check (found, "user preset restores modulation");
+    check (p.currentPresetName == entries.back().name, "user preset sets its name");
+    tmp.deleteRecursively();
+}
+
 int screenshot (const juce::String& path, int module)
 {
     OriginPsyProcessor p;
@@ -157,7 +253,7 @@ int screenshot (const juce::String& path, int module)
     std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
     if (module > 0)
         setValue (p, params::slotModule (0), (float) module);
-    editor->setSize (1040, 700);
+    editor->setSize (1040, 790);
     auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
     juce::File file (path);
     file.deleteFile();
@@ -180,6 +276,8 @@ int main (int argc, char** argv)
     emptyChainIsTransparent();
     allModulesAndFraza();
     state();
+    modulation();
+    presets();
 
     if (failures == 0) std::printf ("All plugin tests passed.\n");
     else std::printf ("%d plugin test(s) failed.\n", failures);

@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Presets.h"
 
 using namespace originpsy;
 
@@ -9,6 +10,23 @@ OriginPsyProcessor::OriginPsyProcessor()
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "OriginPsy", params::createLayout())
 {
+    for (auto* p : getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
+            if (params::isModulatable (*ranged))
+            {
+                modIndex[ranged->paramID] = (int) modParams.size();
+                modParams.push_back (ranged);
+            }
+
+    modNorm = std::make_unique<std::atomic<float>[]> (modParams.size());
+    frazaTargetOf.assign (modParams.size(), -1);
+    const std::pair<juce::String, int> frazaMap[] = {
+        { params::echoMix, 0 }, { params::echoFeedback, 1 }, { params::echoDamp, 2 }, { params::vokalShift, 3 },
+        { params::vokalResonance, 4 }, { params::gateBand (0, "depth"), 5 }, { params::gateBand (1, "depth"), 5 },
+        { params::gateBand (2, "depth"), 5 } };
+    for (const auto& [id, target] : frazaMap) frazaTargetOf[(size_t) modIndex.at (id)] = target;
+    for (size_t i = 0; i < modParams.size(); ++i) modNorm[i].store (modParams[i]->getValue());
+    originpsy::PresetManager::wireMacros (*this);
 }
 
 bool OriginPsyProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -24,7 +42,9 @@ void OriginPsyProcessor::prepareToPlay (double sr, int samplesPerBlock)
     sampleRate = sr;
     chain.prepare (sr, samplesPerBlock);
     monoScratch.assign ((size_t) std::max (1, samplesPerBlock), 0.0f);
-    updateModules (0.0f);
+    envelope.prepare (sr);
+    for (size_t i = 0; i < modParams.size(); ++i) modNorm[i].store (modParams[i]->getValue());
+    updateModules();
     chain.reset();
     clock.reset();
     outGain.reset (sr, 0.02);
@@ -58,68 +78,91 @@ Transport OriginPsyProcessor::readTransport (int numSamples)
     return clock.next (bpm, beatsPerBar, numSamples, sampleRate);
 }
 
-float OriginPsyProcessor::modulated (const juce::String& id, int targetIndex, float fraza) const
+float OriginPsyProcessor::m (const juce::String& id) const
 {
-    auto* p = apvts.getParameter (id);
-    const float amount = value (params::frazaTargets[targetIndex].id);
-    const float norm = juce::jlimit (0.0f, 1.0f, p->getValue() + amount * fraza);
-    return p->convertFrom0to1 (norm);
+    const auto it = modIndex.find (id);
+    if (it == modIndex.end()) return value (id);
+    const int i = it->second;
+    const auto* p = modParams[(size_t) i];
+    return p->getNormalisableRange().snapToLegalValue (p->convertFrom0to1 (modNorm[(size_t) i].load (std::memory_order_relaxed)));
 }
 
-void OriginPsyProcessor::updateModules (float fraza)
+void OriginPsyProcessor::computeModulation (const Transport& t, float fraza, const float* left, const float* right,
+                                            int numSamples)
+{
+    envelope.process (left, right, numSamples);
+
+    std::array<float, numModSources> src {};
+    for (int i = 0; i < 2; ++i)
+        src[(size_t) ModSource::lfo1 + (size_t) i] = Lfo::value ((int) value (params::lfoShape (i)),
+                                                                  (int) value (params::lfoRate (i)), t.ppqAtBlockStart);
+    src[(size_t) ModSource::envelope] = envelope.value();
+    for (int i = 0; i < 4; ++i) src[(size_t) ModSource::macro1 + (size_t) i] = value (params::macro (i));
+    src[(size_t) ModSource::fraza] = fraza;
+    for (int i = 0; i < numModSources; ++i) meters.source[(size_t) i].store (src[(size_t) i], std::memory_order_relaxed);
+
+    for (size_t i = 0; i < modParams.size(); ++i)
+    {
+        float norm = modParams[i]->getValue() + matrix.offsetFor ((int) i, src);
+        if (frazaTargetOf[i] >= 0)
+            norm += value (params::frazaTargets[frazaTargetOf[i]].id) * fraza;
+        modNorm[i].store (juce::jlimit (0.0f, 1.0f, norm), std::memory_order_relaxed);
+    }
+}
+
+void OriginPsyProcessor::updateModules()
 {
     // Chain layout.
     Chain::Layout layout;
     for (int i = 0; i < Chain::numSlots; ++i)
     {
-        layout.slots[(size_t) i] = (ModuleType) (int) value (params::slotModule (i));
-        layout.bypass[(size_t) i] = value (params::slotBypass (i)) > 0.5f;
+        layout.slots[(size_t) i] = (ModuleType) (int) m (params::slotModule (i));
+        layout.bypass[(size_t) i] = m (params::slotBypass (i)) > 0.5f;
     }
     chain.setLayout (layout);
 
     // Fraktal Echo.
     FraktalEcho::Params e;
-    e.division = (int) value (params::echoTime);
-    e.ratio = value (params::echoRatio);
-    e.generations = (int) value (params::echoGenerations);
-    e.scale = (int) value (params::echoScale);
-    e.spread = (int) value (params::echoSpread);
-    e.feedback = modulated (params::echoFeedback, 1, fraza) * 0.95f;
-    e.damp = modulated (params::echoDamp, 2, fraza);
-    e.width = value (params::echoWidth);
-    e.mix = modulated (params::echoMix, 0, fraza);
+    e.division = (int) m (params::echoTime);
+    e.ratio = m (params::echoRatio);
+    e.generations = (int) m (params::echoGenerations);
+    e.scale = (int) m (params::echoScale);
+    e.spread = (int) m (params::echoSpread);
+    e.feedback = m (params::echoFeedback) * 0.95f;
+    e.damp = m (params::echoDamp);
+    e.width = m (params::echoWidth);
+    e.mix = m (params::echoMix);
     chain.echo.setParams (e);
 
     // Vokal Acid.
     VokalAcid::Params v;
-    for (int pc = 0; pc < 12; ++pc) v.vowelMap[(size_t) pc] = value (params::vokalVowel (pc));
-    v.glideMs = value (params::vokalGlide);
-    v.shift = modulated (params::vokalShift, 3, fraza);
-    v.resonance = modulated (params::vokalResonance, 4, fraza);
-    v.accent = value (params::vokalAccent);
-    v.character = (int) value (params::vokalCharacter);
-    v.drive = value (params::vokalDrive);
-    v.mix = value (params::vokalMix);
+    for (int pc = 0; pc < 12; ++pc) v.vowelMap[(size_t) pc] = m (params::vokalVowel (pc));
+    v.glideMs = m (params::vokalGlide);
+    v.shift = m (params::vokalShift);
+    v.resonance = m (params::vokalResonance);
+    v.accent = m (params::vokalAccent);
+    v.character = (int) m (params::vokalCharacter);
+    v.drive = m (params::vokalDrive);
+    v.mix = m (params::vokalMix);
     chain.vokal.setParams (v);
 
     // Polimetar Gate.
     PolimetarGate::Params g;
-    g.lowHz = value (params::gateLow);
-    g.highHz = value (params::gateHigh);
-    g.mix = value (params::gateMix);
+    g.lowHz = m (params::gateLow);
+    g.highHz = m (params::gateHigh);
+    g.mix = m (params::gateMix);
     for (int b = 0; b < 3; ++b)
     {
         auto& band = g.bands[(size_t) b];
-        band.euclidMode = value (params::gateBand (b, "mode")) > 0.5f;
-        band.steps = (int) value (params::gateBand (b, "steps"));
-        band.hits = (int) value (params::gateBand (b, "hits"));
-        band.rotate = (int) value (params::gateBand (b, "rotate"));
-        band.division = (int) value (params::gateBand (b, "rate"));
-        band.depth = juce::jlimit (0.0f, 1.0f, value (params::gateBand (b, "depth"))
-                                                   + value (params::frazaTargets[5].id) * fraza);
-        band.length = value (params::gateBand (b, "length"));
-        band.attackMs = value (params::gateBand (b, "attack"));
-        band.releaseMs = value (params::gateBand (b, "release"));
+        band.euclidMode = m (params::gateBand (b, "mode")) > 0.5f;
+        band.steps = (int) m (params::gateBand (b, "steps"));
+        band.hits = (int) m (params::gateBand (b, "hits"));
+        band.rotate = (int) m (params::gateBand (b, "rotate"));
+        band.division = (int) m (params::gateBand (b, "rate"));
+        band.depth = m (params::gateBand (b, "depth"));
+        band.length = m (params::gateBand (b, "length"));
+        band.attackMs = m (params::gateBand (b, "attack"));
+        band.releaseMs = m (params::gateBand (b, "release"));
         band.pattern = gatePatterns[(size_t) b].load();
     }
     chain.gate.setParams (g);
@@ -144,10 +187,11 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     const double phrasePos = Fraza::phrasePosition (fp, t.ppqAtBlockStart, t.beatsPerBar);
     const float fraza = value (params::frazaOn) > 0.5f ? Fraza::evaluate (fp, phrasePos) : 0.0f;
 
-    updateModules (fraza);
-
     float* left = buffer.getWritePointer (0);
     float* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
+
+    computeModulation (t, fraza, left, right, numSamples);
+    updateModules();
     if (right == nullptr)
     {
         // Mono: run the stereo chain on a copy and fold it back.
@@ -211,30 +255,68 @@ int OriginPsyProcessor::getEchoTaps (std::array<FraktalEcho::Tap, FraktalEcho::m
     return FraktalEcho::buildTree (e, out);
 }
 
-void OriginPsyProcessor::getStateInformation (juce::MemoryBlock& destData)
+juce::ValueTree OriginPsyProcessor::createStateTree()
 {
     auto state = apvts.copyState();
     for (int b = 0; b < 3; ++b)
         state.setProperty ("gate_pattern_" + juce::String (b + 1), (juce::int64) gatePatterns[(size_t) b].load(), nullptr);
     state.setProperty ("version", JucePlugin_VersionString, nullptr);
-    if (auto xml = state.createXml())
+    state.setProperty ("preset_name", currentPresetName, nullptr);
+
+    // Modulation: destinations are saved by parameter ID, not by index, so a
+    // later version that adds parameters still loads old projects.
+    juce::ValueTree mods ("MODS");
+    for (int i = 0; i < ModMatrix::numSlots; ++i)
+    {
+        const auto slot = matrix.get (i);
+        if (! slot.used() || slot.destination >= (int) modParams.size()) continue;
+        juce::ValueTree m ("MOD");
+        m.setProperty ("source", (int) slot.source, nullptr);
+        m.setProperty ("dest", modParams[(size_t) slot.destination]->paramID, nullptr);
+        m.setProperty ("depth", slot.depth, nullptr);
+        mods.appendChild (m, nullptr);
+    }
+    state.removeChild (state.getChildWithName ("MODS"), nullptr);
+    state.appendChild (mods, nullptr);
+    return state;
+}
+
+void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
+{
+    if (! source.hasType (apvts.state.getType())) return;
+    auto state = source.createCopy();
+
+    for (int b = 0; b < 3; ++b)
+    {
+        const auto key = "gate_pattern_" + juce::String (b + 1);
+        if (state.hasProperty (key))
+            gatePatterns[(size_t) b] = (uint32_t) (juce::int64) state.getProperty (key);
+    }
+    currentPresetName = state.getProperty ("preset_name", "Init").toString();
+
+    matrix.clearAll();
+    int slot = 0;
+    for (const auto& m : state.getChildWithName ("MODS"))
+    {
+        const int dest = modulatableIndex (m.getProperty ("dest").toString());
+        const int src = (int) m.getProperty ("source", 0);
+        if (dest < 0 || src <= 0 || src >= numModSources || slot >= ModMatrix::numSlots) continue;
+        matrix.set (slot++, { (ModSource) src, dest, (float) m.getProperty ("depth", 0.0f) });
+    }
+    state.removeChild (state.getChildWithName ("MODS"), nullptr);
+    apvts.replaceState (state);
+}
+
+void OriginPsyProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    if (auto xml = createStateTree().createXml())
         copyXmlToBinary (*xml, destData);
 }
 
 void OriginPsyProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
-    {
-        auto state = juce::ValueTree::fromXml (*xml);
-        if (! state.hasType (apvts.state.getType())) return;
-        for (int b = 0; b < 3; ++b)
-        {
-            const auto key = "gate_pattern_" + juce::String (b + 1);
-            if (state.hasProperty (key))
-                gatePatterns[(size_t) b] = (uint32_t) (juce::int64) state.getProperty (key);
-        }
-        apvts.replaceState (state);
-    }
+        loadStateTree (juce::ValueTree::fromXml (*xml));
 }
 
 juce::AudioProcessorEditor* OriginPsyProcessor::createEditor()

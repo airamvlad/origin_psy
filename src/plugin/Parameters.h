@@ -35,6 +35,10 @@ inline const juce::String gateHigh = "gate_high_hz";
 inline const juce::String gateMix = "gate_mix";
 inline juce::String gateBand (int band, const char* name) { return "gate_b" + juce::String (band + 1) + "_" + name; }
 
+inline juce::String lfoRate (int i) { return "lfo" + juce::String (i + 1) + "_rate"; }
+inline juce::String lfoShape (int i) { return "lfo" + juce::String (i + 1) + "_shape"; }
+inline juce::String macro (int i) { return "macro" + juce::String (i + 1); }
+
 inline const juce::String frazaOn = "fraza_on";
 inline const juce::String frazaBars = "fraza_bars";
 inline const juce::String frazaOffset = "fraza_offset";
@@ -63,6 +67,12 @@ juce::StringArray scaleNames();
 juce::StringArray vowelNames();
 juce::StringArray moduleNames();
 juce::StringArray frazaCurveNames();
+juce::StringArray lfoRateNames();
+juce::StringArray lfoShapeNames();
+
+/** Parameters that the modulation matrix may not target (the output level,
+    the macros themselves and the Fraza amounts). */
+bool isModulatable (const juce::RangedAudioParameter&);
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 

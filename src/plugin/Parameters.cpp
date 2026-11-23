@@ -2,6 +2,7 @@
 
 #include "dsp/Chain.h"
 #include "dsp/Fraza.h"
+#include "dsp/Modulation.h"
 #include "dsp/Scales.h"
 
 namespace originpsy::params
@@ -33,6 +34,24 @@ juce::StringArray moduleNames()
 juce::StringArray frazaCurveNames()
 {
     return { "Rise", "Rise (late)", "Last bar", "Last 2 bars", "Last 4 bars", "Fall", "Every 4th bar" };
+}
+
+juce::StringArray lfoRateNames()
+{
+    juce::StringArray s;
+    for (const auto& r : Lfo::rates) s.add (r.name);
+    return s;
+}
+
+juce::StringArray lfoShapeNames() { return { "Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Random" }; }
+
+bool isModulatable (const juce::RangedAudioParameter& p)
+{
+    const auto& id = p.paramID;
+    if (id == outGain || id.startsWith ("macro") || id.startsWith ("fraza_to_") || id.startsWith ("lfo"))
+        return false;
+    return dynamic_cast<const juce::AudioParameterFloat*> (&p) != nullptr
+        || dynamic_cast<const juce::AudioParameterInt*> (&p) != nullptr;
 }
 
 namespace
@@ -176,6 +195,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (choice (frazaCurve, "Fraza Curve", frazaCurveNames(), Fraza::last4Bars));
         for (const auto& t : frazaTargets)
             g->addChild (flt (t.id, juce::String ("Fraza > ") + t.label, Range (-1.0f, 1.0f, 0.001f), 0.0f, "amount"));
+        layout.add (std::move (g));
+    }
+
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("mod", "Modulation", " | ");
+        const int defRate[] = { 4, 7 }; // 1/4 and 2 bars
+        for (int i = 0; i < 2; ++i)
+        {
+            g->addChild (choice (lfoRate (i), "LFO " + juce::String (i + 1) + " Rate", lfoRateNames(), defRate[i]));
+            g->addChild (choice (lfoShape (i), "LFO " + juce::String (i + 1) + " Shape", lfoShapeNames(), i == 0 ? 0 : 1));
+        }
+        for (int i = 0; i < 4; ++i)
+            g->addChild (percent (macro (i), "Macro " + juce::String (i + 1), 0.0f));
         layout.add (std::move (g));
     }
 

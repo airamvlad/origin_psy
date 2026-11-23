@@ -41,6 +41,19 @@ The sound is split into three bands (**Low | Mid** and **Mid | High**), and each
 
 A curve that knows where you are in an 8, 16 or 32 bar phrase. The knobs on the right set how far the curve moves each parameter (Echo Mix, Echo Feedback, Echo Damp, Vokal Formant, Vokal Resonance, Gate Depth), so the build-up plays itself with no automation lanes. **Offset** moves the start of the phrase by a few bars. The **DROP** button sets up a ready-made build-up over the last 4 bars of the phrase in one click.
 
+### Modulation
+
+The **MOD** row holds the sources: **LFO 1** and **LFO 2** (synced to the song, rate from 1/16 to 16 bars, sine, triangle, saw up, saw down, square or random), **ENV** (follows the input level), the macros **M1** to **M4**, and **FRAZA** (the phrase curve). Each chip shows its live value.
+
+- Drag a source onto any knob to connect it. A coloured ring around the knob shows how far it moves, and a white dot shows where the parameter really is right now.
+- Shift-drag the knob to set the depth of its newest connection. Right-click it to invert or remove a connection.
+- Up to 8 connections at once. They are saved with the project and in presets.
+- The macros start wired the same way in every factory preset: M1 Space (echo mix and feedback), M2 Talk (vokal resonance), M3 Chop (gate depth on the mid and high bands). M4 is free.
+
+### Presets
+
+The bar at the top lists factory presets by category (Init, Build-up, Lead FX, Bass, Pads, Glitch), then your own. **Save** stores the whole state (parameters, drawn gate steps and modulation) as a `.originpsy` file in `Documents/AMV/OriginPsy Presets`. Subfolders there show up too.
+
 ## Building
 
 You need CMake 3.22 or newer and a C++20 compiler (Visual Studio 2022 on Windows, Xcode on macOS). JUCE 8.0.9 is downloaded automatically.
@@ -59,8 +72,8 @@ The plugin's vendor is **AMV**, so DAWs list it next to AMVSynth and AMVScope.
 
 ## Tests
 
-- `originpsy_dsp_tests`: the JUCE-free DSP core (echo timing, pitch tracker, Euclidean rhythms, polymeter, Fraza, null tests, stability at extreme settings, CPU)
-- `originpsy_plugin_tests`: the whole plugin without a DAW (44.1 to 192 kHz, various block sizes, saving state, Drop)
+- `originpsy_dsp_tests`: the JUCE-free DSP core (echo timing, pitch tracker, LFOs, modulation matrix, envelope follower, Euclidean rhythms, polymeter, Fraza, null tests, stability at extreme settings, CPU)
+- `originpsy_plugin_tests`: the whole plugin without a DAW (44.1 to 192 kHz, various block sizes, saving state, Drop, modulation, loading every factory preset, saving and loading a user preset)
 - pluginval at strictness level 5 in GitHub Actions (Windows)
 - `originpsy_plugin_tests --screenshot shot.png 1` renders the editor (1 = Echo, 2 = Vokal, 3 = Gate)
 
@@ -68,4 +81,4 @@ The checklist for manual testing in Bitwig is in [docs/TESTING.md](docs/TESTING.
 
 ## Roadmap
 
-The full plan with all six modules is in [docs/PLAN.md](docs/PLAN.md). Next up: drag and drop modulation and presets, then Zap Rezonator, Orbit Doppler and Spektral Ratchet.
+The full plan with all six modules is in [docs/PLAN.md](docs/PLAN.md). Next up: Zap Rezonator, Orbit Doppler and Spektral Ratchet.

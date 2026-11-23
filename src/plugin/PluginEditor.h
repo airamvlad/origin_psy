@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "Presets.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -30,19 +31,65 @@ public:
     void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool highlighted, bool down) override;
 };
 
-/** Rotary knob with its name under it, attached to a parameter. */
-class Knob : public juce::Component
+juce::Colour sourceColour (ModSource);
+
+/** Slider that also edits the modulation on its parameter:
+    shift-drag sets the depth of the newest connection, right-click lists the
+    connections (invert, remove). */
+class ModSlider : public juce::Slider
+{
+public:
+    std::function<int()> modIndex;            // modulatable index of the parameter, -1 = none
+    std::function<OriginPsyProcessor*()> processor;
+
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    int depthSlot = -1;
+    float depthStart = 0.0f;
+};
+
+/** Rotary knob with its name under it, attached to a parameter. Modulation
+    sources can be dropped on it; rings show each connection. */
+class Knob : public juce::Component, public juce::DragAndDropTarget
 {
 public:
     Knob (juce::AudioProcessorValueTreeState& state, const juce::String& paramId, const juce::String& name,
           juce::Colour accent = colours::cyan, bool horizontal = false);
     void resized() override;
+    void paintOverChildren (juce::Graphics&) override;
+
+    bool isInterestedInDragSource (const SourceDetails&) override;
+    void itemDragEnter (const SourceDetails&) override { dragOver = true; repaint(); }
+    void itemDragExit (const SourceDetails&) override { dragOver = false; repaint(); }
+    void itemDropped (const SourceDetails&) override;
 
 private:
-    bool compact = false;
-    juce::Slider slider;
+    OriginPsyProcessor* findProcessor() const;
+    int modIndex() const;
+
+    juce::String paramId;
+    bool compact = false, dragOver = false;
+    mutable int cachedIndex = -2;
+    ModSlider slider;
     juce::Label label;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+};
+
+/** A modulation source you can drag onto any knob. Shows its live value. */
+class SourceChip : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    SourceChip (OriginPsyProcessor& p, ModSource s) : proc (p), source (s) {}
+    void paint (juce::Graphics&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseEnter (const juce::MouseEvent&) override { setMouseCursor (juce::MouseCursor::DraggingHandCursor); }
+
+private:
+    OriginPsyProcessor& proc;
+    ModSource source;
 };
 
 /** Combo box with a small caption, attached to a choice parameter. */
@@ -147,6 +194,41 @@ private:
     juce::TextButton drop { "DROP" };
 };
 
+class ModStrip : public juce::Component
+{
+public:
+    explicit ModStrip (OriginPsyProcessor&);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    OriginPsyProcessor& proc;
+    std::vector<std::unique_ptr<SourceChip>> chips;
+    std::vector<std::unique_ptr<Choice>> lfoControls;
+    std::vector<std::unique_ptr<Knob>> macros;
+};
+
+class PresetBar : public juce::Component
+{
+public:
+    explicit PresetBar (OriginPsyProcessor&);
+    void resized() override;
+    void refresh();
+    /** Shows the processor's current preset name (after a host recall, for example). */
+    void syncName();
+    juce::String shownName;
+
+private:
+    void loadIndex (int index);
+    void askToSave();
+
+    OriginPsyProcessor& proc;
+    originpsy::PresetManager presets;
+    std::vector<originpsy::PresetManager::Entry> entries;
+    juce::ComboBox box;
+    juce::TextButton prev { "<" }, next { ">" }, save { "Save" };
+};
+
 class SlotCard : public juce::Component
 {
 public:
@@ -169,11 +251,14 @@ private:
 } // namespace originpsy::ui
 
 //==============================================================================
-class OriginPsyEditor : public juce::AudioProcessorEditor, private juce::Timer
+class OriginPsyEditor : public juce::AudioProcessorEditor,
+                        public juce::DragAndDropContainer,
+                        private juce::Timer
 {
 public:
     explicit OriginPsyEditor (OriginPsyProcessor&);
     ~OriginPsyEditor() override;
+    OriginPsyProcessor& getProcessor() noexcept { return proc; }
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -189,7 +274,10 @@ private:
     originpsy::ui::VokalPage vokalPage;
     originpsy::ui::GatePage gatePage;
     originpsy::ui::FrazaStrip fraza;
+    originpsy::ui::ModStrip modStrip;
+    originpsy::ui::PresetBar presetBar;
     originpsy::ui::Knob output;
+    juce::TooltipWindow tooltips { this, 700 };
     int shownModule = 1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OriginPsyEditor)

@@ -46,7 +46,8 @@ if(ORIGINPSY_BUILD_PLUGIN)
     target_sources(OriginPsy PRIVATE
         src/plugin/Parameters.cpp
         src/plugin/PluginProcessor.cpp
-        src/plugin/PluginEditor.cpp)
+        src/plugin/PluginEditor.cpp
+        src/plugin/Presets.cpp)
 
     target_compile_definitions(OriginPsy PUBLIC
         JUCE_WEB_BROWSER=0
