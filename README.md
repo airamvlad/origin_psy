@@ -1,6 +1,6 @@
 # OriginPsy
 
-An FX plugin (VST3, AU on macOS, and Standalone) with effects built for psytrance that you won't find as ready-made plugins. It has six modules plus Phrase, a modulation source tied to the phrase.
+An FX plugin (VST3, AU on macOS, and Standalone) with effects built for psytrance that you won't find as ready-made plugins. It has seven modules plus Phrase, a modulation source tied to the phrase.
 
 ## How it works
 
@@ -63,6 +63,16 @@ Slows the sound down like a tape machine losing power (tempo and pitch fall toge
 - **Trigger**: hold the **BRAKE** button (or automate Tape Brake in the DAW), or let it fire by itself every 2, 4, 8 or 16 bars: the slow down ends exactly on the bar line, and Start spins up right after it
 - **Length**: how long the slow down takes (1/16 to 2 bars); **Curve**: falls early and lingers (low) or holds speed and drops late (high)
 
+### Spectral Ratchet
+
+On every freeze step of a 1 to 16 step pattern it holds the spectrum of the sound and repeats it, each repeat moved by another interval or with parts of the spectrum masked out. Pass steps let the sound through. The stutter is made of the colour of the sound, not of chopped audio.
+
+- **Steps**: click a step to switch between freeze (filled) and pass; **Step rate**: 1/32 to 1 bar
+- **Interval**: Same, Octaves up or down, Fifths up, Scale up or down, Random in scale (with **Scale**)
+- **Mask**: None, Comb A or B, Alternate combs, Lows only, Highs only, Walking band
+- **Smear**: from glassy to washed out; **Tilt**: darker or brighter repeats
+- It uses a 2048 point FFT, so it adds 2048 samples of latency (about 43 ms at 48 kHz) while it is in the chain. The plugin reports it, and Bitwig compensates for it.
+
 ### Phrase
 
 A curve that knows where you are in an 8, 16 or 32 bar phrase (it rises through the phrase by default; the dot on the curve shows its value now). The knobs on the right set how far the curve moves each parameter (Echo Mix, Echo Feedback, Echo Damp, Vocal Formant, Vocal Resonance, Gate Depth), so the build-up plays itself with no automation lanes. **Offset** moves the start of the phrase by a few bars. The **DROP** button sets up a ready-made build-up over the last 4 bars of the phrase in one click.
@@ -79,6 +89,10 @@ The **MOD** row holds the sources: **LFO 1** and **LFO 2** (synced to the song, 
 ### Presets
 
 The bar at the top lists factory presets by category (Init, Full-on, Dark, Prog, Build-up, Lead FX, Bass, Pads, Glitch), then your own. The genre sets are starting points for a whole track style: **Full-on** is bright and busy (Hijaz, 1/16 grooves, zaps, a riser with a tape stop every 16 bars), **Dark** is low and twisted (Hungarian and harmonic minor, robot voice, 1/32 glitch swarms, tape slow-downs), **Prog** is deep and smooth (Dorian and natural minor, slow orbits, long LFOs, a 32 bar journey). **Save** stores the whole state (parameters, drawn gate steps and modulation) as a `.originpsy` file in `Documents/AMV/OriginPsy Presets`. Subfolders there show up too.
+
+### Randomize and Mutate
+
+Next to the presets: **Randomize** gives the modules in the chain new random settings, **Mutate** only nudges them a little (choices change now and then by one step). The chain, the output level, the macros, the modulation and the Brake button are left alone, and mixes, depths and feedback stay in a usable range. Save what you like as a preset.
 
 ## Building
 
@@ -101,10 +115,10 @@ The plugin's vendor is **AMV**, so DAWs list it next to AMVSynth and AMVScope.
 - `originpsy_dsp_tests`: the JUCE-free DSP core (echo timing, pitch tracker, LFOs, modulation matrix, envelope follower, Euclidean rhythms, polymeter, Phrase, null tests, stability at extreme settings, CPU)
 - `originpsy_plugin_tests`: the whole plugin without a DAW (44.1 to 192 kHz, various block sizes, saving state, Drop, modulation, loading every factory preset, saving and loading a user preset)
 - pluginval at strictness level 5 in GitHub Actions (Windows)
-- `originpsy_plugin_tests --screenshot shot.png 1` renders the editor (1 = Echo, 2 = Vocal, 3 = Gate, 4 = Zap, 5 = Orbit, 6 = Tape)
+- `originpsy_plugin_tests --screenshot shot.png 1` renders the editor (1 = Echo, 2 = Vocal, 3 = Gate, 4 = Zap, 5 = Orbit, 6 = Tape, 7 = Ratchet)
 
 The checklist for manual testing in Bitwig is in [docs/TESTING.md](docs/TESTING.md).
 
 ## Roadmap
 
-The full plan with all six modules is in [docs/PLAN.md](docs/PLAN.md). Next up: Spectral Ratchet.
+The full plan with all six modules is in [docs/PLAN.md](docs/PLAN.md). Next up: Randomize, drag to reorder the chain, per-module Dry/Wet and Solo with an output limiter, sidechain, MIDI control, and more presets.
