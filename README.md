@@ -1,49 +1,49 @@
 # OriginPsy
 
-FX plugin (VST3, AU na macOS-u i Standalone) sa efektima napravljenim za psytrance, kojih nema kao gotovih pluginova. Prva verzija ima tri modula i Fraza modulaciju.
+An FX plugin (VST3, AU on macOS, and Standalone) with effects built for psytrance that you won't find as ready-made plugins. Version 0.1 has three modules plus Fraza, a modulation source tied to the phrase.
 
-## Kako radi
+## How it works
 
-Gore su četiri **slota**. U svaki biraš modul, a zvuk prolazi kroz slotove s lijeva na desno. Dugme **ON** na slotu ga uključuje ili preskače. Isti modul radi samo u jednom slotu; ako ga izabereš i u drugom, taj drugi se preskače i to piše na kartici. Klik na slot otvara njegov modul u sredini.
+The top row has four **slots**. Pick a module for each one; the sound runs through the slots from left to right. The **ON** button on a slot plays it or skips it. A module plays in one slot only: if you pick it in a second slot, that slot is skipped and the card says so. Clicking a slot opens its module in the middle.
 
-Tempo i pozicija takta dolaze iz DAW-a. Kad DAW ne svira (ili u Standalone verziji), plugin ima svoj sat na tempu iz DAW-a ili 140 BPM, pa se efekti čuju i dok podešavaš.
+Tempo and bar position come from the DAW. When the DAW is stopped (or in the Standalone version) the plugin runs its own clock at the DAW tempo, or 140 BPM, so the effects keep moving while you tweak them.
 
 ### Fraktal Echo
 
-Delay čiji se svaki eho grana na dva, kao drvo: jedna grana nastavlja istim korakom, druga je kraća (**Branch**, 0,618 je zlatni rez) i pomjerena za nekoliko stepeni skale (**Pitch Spread**, u izabranoj **Scale**). Rep zvuči kao melodija u tonalitetu, a ne kao isti zvuk koji tone. Crtež lijevo pokazuje drvo: vrijeme ide udesno, visina tona gore i dolje.
+A delay whose echoes branch like a tree. One branch carries on at the same stride, the other is shorter (**Branch**; 0.618 is the golden ratio) and shifted by a number of scale degrees (**Pitch Spread**, in the chosen **Scale**). The tail turns into a melody in key instead of the same sound fading out. The drawing on the left shows the tree: time runs to the right, pitch goes up and down.
 
-- **Time**: korak glavne grane (1/32 do 1 takt, triplete i tačkaste)
-- **Generations**: koliko puta se grana (1 do 4, odnosno 1 do 15 eha)
-- **Feedback**: cijelo drvo se vraća na ulaz, pa se tonovi nastavljaju penjati ili spuštati
-- **Damp**: tamniji ehi, **Width**: koliko se grane šire lijevo i desno, **Mix**
+- **Time**: stride of the main branch (1/32 to 1 bar, with triplets and dotted values)
+- **Generations**: how many times the tree branches (1 to 4, which is 1 to 15 echoes)
+- **Feedback**: the whole tree is fed back into the input, so the notes keep climbing or falling
+- **Damp** darkens the repeats, **Width** spreads the branches left and right, **Mix**
 
 ### Vokal Acid
 
-Formant filter koji prati visinu tona acid ili lead linije i svakoj noti (C do B) daje samoglasnik iz mape (A, E, I, O, U). Linija tako "govori" po melodiji, bez automatizacije.
+A formant filter that follows the pitch of an acid or lead line and gives each note (C to B) a vowel from the map (A, E, I, O, U). The line "talks" along with its melody, with no automation.
 
-- **Glide**: koliko brzo zvuk klizi s jednog samoglasnika na drugi
-- **Formant**: pomjera sve formante gore ili dolje (polutonovi)
-- **Resonance**, **Accent** (nagli skok jačine na tren pojača rezonancu i glasnoću), **Drive** (2x oversampling), **Mix**
-- **Character**: Male, Female ili Robot (formanti se zaključaju na harmonike tona, pa je zvuk metalan)
+- **Glide**: how fast the sound slides from one vowel to the next
+- **Formant**: shifts all formants up or down (semitones)
+- **Resonance**, **Accent** (a sudden jump in level briefly pushes resonance and level up), **Drive** (2x oversampled), **Mix**
+- **Character**: Male, Female or Robot (the formants lock onto the harmonics of the note for a metallic sound)
 
-Lijevo se vidi koji samoglasnik trenutno svira i koju notu plugin čuje.
+The left side shows which vowel is playing and which note the plugin hears.
 
 ### Polimetar Gate
 
-Zvuk se dijeli na tri pojasa (**Low | Mid** i **Mid | High**), a svaki pojas ima svoj gate ritam i svoju dužinu. Na primjer 16, 7 i 13 koraka: ritmovi se ponovo poklope tek posle mnogo taktova, pa jedan pad postane tekstura koja se ne ponavlja.
+The sound is split into three bands (**Low | Mid** and **Mid | High**), and each band has its own gate rhythm and its own pattern length. With 16, 7 and 13 steps, for example, the rhythms line up again only after many bars, so a single pad becomes a texture that never repeats.
 
-- **Mode**: Euclid (koraci **Hits** raspoređeni što ravnomjernije kroz **Steps**, **Rotate** ih pomjera) ili Steps (klikom na prsten crtaš korake)
-- **Rate**: dužina jednog koraka
-- **Depth**: koliko se pojas utišava između udaraca (Low je po defaultu 0 %, da kick i bas ostanu mirni)
-- **Length**: koliko dugo je gate otvoren unutar koraka, **Attack** i **Release** da nema klikova
+- **Mode**: Euclid (**Hits** spread as evenly as possible over **Steps**, **Rotate** shifts them) or Steps (click the ring to draw steps)
+- **Rate**: length of one step
+- **Depth**: how far the band is turned down between hits (Low defaults to 0 % so kick and bass stay steady)
+- **Length**: how long the gate stays open within a step; **Attack** and **Release** keep it click-free
 
 ### Fraza
 
-Kriva koja zna gdje si u frazi od 8, 16 ili 32 takta. Knobovi desno određuju koliko kriva pomjera koji parametar (Echo Mix, Echo Feedback, Echo Damp, Vokal Formant, Vokal Resonance, Gate Depth), pa se build-up pravi sam, bez linija automatizacije. **Offset** pomjera početak fraze za nekoliko taktova. Dugme **DROP** jednim klikom postavi gotov build-up kroz zadnja 4 takta fraze.
+A curve that knows where you are in an 8, 16 or 32 bar phrase. The knobs on the right set how far the curve moves each parameter (Echo Mix, Echo Feedback, Echo Damp, Vokal Formant, Vokal Resonance, Gate Depth), so the build-up plays itself with no automation lanes. **Offset** moves the start of the phrase by a few bars. The **DROP** button sets up a ready-made build-up over the last 4 bars of the phrase in one click.
 
-## Build
+## Building
 
-Treba CMake 3.22 ili noviji i C++20 kompajler (Visual Studio 2022 na Windowsu, Xcode na macOS-u). JUCE 8.0.9 se skida sam.
+You need CMake 3.22 or newer and a C++20 compiler (Visual Studio 2022 on Windows, Xcode on macOS). JUCE 8.0.9 is downloaded automatically.
 
 ```
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -51,19 +51,21 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Plugin je u `build/OriginPsy_artefacts/Release/VST3/OriginPsy.vst3`. Sa `-DORIGINPSY_COPY_AFTER_BUILD=ON` se sam kopira u sistemski folder za pluginove.
+The plugin ends up in `build/OriginPsy_artefacts/Release/VST3/OriginPsy.vst3`. With `-DORIGINPSY_COPY_AFTER_BUILD=ON` it is copied into the system plugin folder after building.
 
-GitHub Actions pravi Windows i macOS build na svaki push i PR; gotov plugin se skida iz taba **Actions**, pod **Artifacts**.
+GitHub Actions builds Windows and macOS on every push and pull request; download the plugin from the **Actions** tab, under **Artifacts**.
 
-## Testovi
+The plugin's vendor is **AMV**, so DAWs list it next to AMVSynth and AMVScope.
 
-- `originpsy_dsp_tests`: DSP jezgro bez JUCE-a (vrijeme eha, pitch tracker, euklidski ritmovi, polimetar, Fraza, null testovi, stabilnost pri maksimalnim podešavanjima, CPU)
-- `originpsy_plugin_tests`: cijeli plugin bez DAW-a (sample rate 44,1 do 192 kHz, razne veličine bloka, čuvanje stanja, Drop)
-- pluginval na nivou 5 u GitHub Actions (Windows)
-- `originpsy_plugin_tests --screenshot slika.png 1` snimi izgled plugina (1 = Echo, 2 = Vokal, 3 = Gate)
+## Tests
 
-Lista za ručno testiranje u Bitwigu je u [docs/TESTIRANJE.md](docs/TESTIRANJE.md).
+- `originpsy_dsp_tests`: the JUCE-free DSP core (echo timing, pitch tracker, Euclidean rhythms, polymeter, Fraza, null tests, stability at extreme settings, CPU)
+- `originpsy_plugin_tests`: the whole plugin without a DAW (44.1 to 192 kHz, various block sizes, saving state, Drop)
+- pluginval at strictness level 5 in GitHub Actions (Windows)
+- `originpsy_plugin_tests --screenshot shot.png 1` renders the editor (1 = Echo, 2 = Vokal, 3 = Gate)
 
-## Plan
+The checklist for manual testing in Bitwig is in [docs/TESTING.md](docs/TESTING.md).
 
-Cijeli plan sa svih šest modula je u [docs/PLAN.md](docs/PLAN.md). Slijede: drag and drop modulacija i preseti, pa Zap Rezonator, Orbit Doppler i Spektral Ratchet.
+## Roadmap
+
+The full plan with all six modules is in [docs/PLAN.md](docs/PLAN.md). Next up: drag and drop modulation and presets, then Zap Rezonator, Orbit Doppler and Spektral Ratchet.

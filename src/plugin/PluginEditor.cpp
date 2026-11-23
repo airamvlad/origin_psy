@@ -212,8 +212,8 @@ void EchoPage::paint (juce::Graphics& g)
 
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (11.0f));
-    g.drawText (juce::String::fromUTF8 ("vrijeme →"), area.withTop (area.getBottom() + 4.0f).withHeight (14.0f), juce::Justification::centredRight);
-    g.drawText ("visina tona", area.withHeight (14.0f).translated (0.0f, -18.0f), juce::Justification::centredRight);
+    g.drawText (juce::String::fromUTF8 ("time →"), area.withTop (area.getBottom() + 4.0f).withHeight (14.0f), juce::Justification::centredRight);
+    g.drawText ("pitch", area.withHeight (14.0f).translated (0.0f, -18.0f), juce::Justification::centredRight);
 }
 
 void EchoPage::resized()
@@ -277,16 +277,16 @@ void VokalPage::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (15.0f));
     g.setColour (colours::text);
     const juce::String noteText = note >= 0 ? juce::String (noteNames[note % 12]) + juce::String (note / 12 - 1)
-                                            : juce::String ("nema tona");
+                                            : juce::String ("no pitch");
     g.drawText (noteText, display.removeFromBottom (40.0f), juce::Justification::centred);
 
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (11.5f));
-    g.drawText ("Nota > samoglasnik", juce::Rectangle<float> (266.0f, 30.0f, 400.0f, 16.0f), juce::Justification::left);
-    g.drawFittedText (juce::String::fromUTF8 (
-                          "Svaka nota koju linija svira dobija svoj samoglasnik, a Glide određuje koliko brzo "
-                          "zvuk klizi s jednog na drugi. Akcent (nagli skok jačine) na tren pojača rezonancu. "
-                          "Robot zaključava formante na harmonike tona, pa zvuk postaje metalan."),
+    g.drawText ("Note > vowel", juce::Rectangle<float> (266.0f, 30.0f, 400.0f, 16.0f), juce::Justification::left);
+    g.drawFittedText (juce::String (
+                          "Every note the line plays gets its own vowel, and Glide sets how fast the sound slides "
+                          "from one to the next. An accent (a sudden jump in level) briefly pushes the resonance up. "
+                          "Robot locks the formants onto the harmonics of the note for a metallic sound."),
                       juce::Rectangle<int> (266, 172, 400, 80), juce::Justification::topLeft, 5);
 }
 
@@ -469,7 +469,7 @@ void PhraseView::paint (juce::Graphics& g)
     g.drawVerticalLine ((int) x, r.getY(), r.getBottom());
     const float bar = (float) proc.meters.frazaPosition.load() * (float) fp.bars + 1.0f;
     g.setFont (juce::FontOptions (11.0f));
-    g.drawText ("takt " + juce::String ((int) bar) + " / " + juce::String (fp.bars), r.withHeight (14.0f),
+    g.drawText ("bar " + juce::String ((int) bar) + " / " + juce::String (fp.bars), r.withHeight (14.0f),
                 juce::Justification::topRight);
 }
 
@@ -489,7 +489,7 @@ FrazaStrip::FrazaStrip (OriginPsyProcessor& p)
         addAndMakeVisible (*amounts.back());
     }
     drop.setColour (juce::TextButton::buttonColourId, colours::magenta.withAlpha (0.35f));
-    drop.setTooltip ("Gotov build-up kroz zadnja 4 takta fraze");
+    drop.setTooltip ("Ready-made build-up over the last 4 bars of the phrase");
     drop.onClick = [this] { proc.applyDropPreset(); };
 }
 
@@ -498,7 +498,7 @@ void FrazaStrip::paint (juce::Graphics& g)
     drawPanel (g, getLocalBounds().toFloat(), colours::cyan, "FRAZA");
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (11.5f));
-    g.drawText ("Koliko kriva pomjera parametar", 572, 8, 420, 16, juce::Justification::left);
+    g.drawText ("How far the curve moves each parameter", 572, 8, 420, 16, juce::Justification::left);
 }
 
 void FrazaStrip::resized()
@@ -572,7 +572,7 @@ void SlotCard::paint (juce::Graphics& g)
         {
             g.setColour (colours::amber);
             g.setFont (juce::FontOptions (11.0f));
-            g.drawText (juce::String::fromUTF8 ("već u slotu ") + juce::String (other + 1) + juce::String::fromUTF8 (", ovaj se preskače"),
+            g.drawText ("already in slot " + juce::String (other + 1) + ", this one is skipped",
                         r.reduced (18.0f, 8.0f), juce::Justification::topRight);
             break;
         }
@@ -644,9 +644,9 @@ void OriginPsyEditor::paint (juce::Graphics& g)
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (12.0f));
     const juce::String tempo = juce::String (proc.meters.bpm.load(), 1) + " BPM"
-                               + (proc.meters.hostPlaying.load() ? "" : "  (interni sat)");
+                               + (proc.meters.hostPlaying.load() ? "" : "  (internal clock)");
     g.drawText (tempo, 170, 20, 240, 20, juce::Justification::left);
-    g.drawText (juce::String::fromUTF8 ("Klik na slot otvara modul. Isti modul radi samo u jednom slotu."),
+    g.drawText ("Click a slot to open its module. A module plays in one slot only.",
                 420, 20, 420, 20, juce::Justification::left);
 }
 

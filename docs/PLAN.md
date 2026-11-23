@@ -1,31 +1,31 @@
 # Plan
 
-OriginPsy je lanac od četiri slota u koje ide bilo koji od šest modula, plus Fraza modulacija koja zna gdje si u 8, 16 ili 32 takta.
+OriginPsy is a chain of four slots that each take one of six modules, plus Fraza, a modulation source that knows where you are in an 8, 16 or 32 bar phrase.
 
-| Modul | Šta radi | Stanje |
+| Module | What it does | Status |
 | --- | --- | --- |
-| Fraktal Echo | Delay čiji se ehi granaju kao drvo, svaka grana pomjerena za stepen skale | urađeno (v0.1) |
-| Vokal Acid | Formant filter čiji samoglasnik prati notu koju acid linija svira | urađeno (v0.1) |
-| Polimetar Gate | Tri pojasa, svaki sa svojim gate ritmom i dužinom (npr. 16, 7, 13 koraka) | urađeno (v0.1) |
-| Fraza + Drop | Build-up vezan za poziciju u frazi, bez automatizacije | urađeno (v0.1) |
-| Zap Rezonator | Svaki udarac na ulazu okida kratki "laser" zvižduk na noti iz skale | sledeće |
-| Orbit Doppler | Zvuk kruži oko slušaoca po nacrtanoj putanji, sa pravim Doppler efektom | sledeće |
-| Spektral Ratchet | Na svaki korak zamrzne spektar i ponavlja ga sa drugim intervalom ili maskom | poslije |
+| Fraktal Echo | A delay whose echoes branch like a tree, each branch shifted by a scale degree | done (v0.1) |
+| Vokal Acid | A formant filter whose vowel follows the note the acid line plays | done (v0.1) |
+| Polimetar Gate | Three bands, each with its own gate rhythm and length (e.g. 16, 7, 13 steps) | done (v0.1) |
+| Fraza + Drop | A build-up tied to the position in the phrase, with no automation | done (v0.1) |
+| Zap Rezonator | Every hit on the input triggers a short "laser" zap on a note from the scale | next |
+| Orbit Doppler | The sound circles the listener along a drawn path, with real Doppler shift | next |
+| Spektral Ratchet | Freezes the spectrum on each step and repeats it with a different interval or mask | later |
 
-## Faze
+## Phases
 
-1. Kostur, lanac od 4 slota, tempo iz hosta, CTest i GitHub Actions (urađeno)
-2. Fraktal Echo (urađeno)
-3. Vokal Acid (urađeno)
-4. Polimetar Gate (urađeno)
-5. Fraza i Drop (urađeno); drag and drop modulacija i preseti (sledeće)
-6. Zap Rezonator i Orbit Doppler
-7. Spektral Ratchet (FFT, latencija prijavljena hostu)
-8. Završni krug: CPU, preseti za sve module, uputstvo, AU build
+1. Skeleton, 4 slot chain, host tempo, CTest and GitHub Actions (done)
+2. Fraktal Echo (done)
+3. Vokal Acid (done)
+4. Polimetar Gate (done)
+5. Fraza and Drop (done); drag and drop modulation and presets (next)
+6. Zap Rezonator and Orbit Doppler
+7. Spektral Ratchet (FFT, latency reported to the host)
+8. Final pass: CPU, presets for every module, manual, AU build
 
-## Pravila za DSP
+## DSP rules
 
-- Bez alokacije memorije i zaključavanja u `processBlock`; sve se priprema u `prepareToPlay`.
-- DSP jezgro (`src/dsp`) je čisti C++ bez JUCE-a i testira se bez DAW-a.
-- Parametri su glatki, promjena slotova ide preko kratkog fade-a.
-- Oversampling samo gdje ima nelinearnosti (Drive u Vokal Acidu).
+- No memory allocation or locks in `processBlock`; everything is prepared in `prepareToPlay`.
+- The DSP core (`src/dsp`) is plain C++ without JUCE and is tested without a DAW.
+- Parameters are smoothed, and slot changes go through a short fade.
+- Oversampling only where there is a nonlinearity (Drive in Vokal Acid).

@@ -21,7 +21,7 @@ inline const char* moduleName (ModuleType t) noexcept
         case ModuleType::polimetarGate: return "Polimetar Gate";
         case ModuleType::empty:         break;
     }
-    return "Prazno";
+    return "Empty";
 }
 
 /** Four slots, each holding one of the modules. A module can sit in one
