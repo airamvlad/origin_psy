@@ -99,6 +99,20 @@ The **MOD** row holds the sources: **LFO 1** and **LFO 2** (synced to the song, 
 - Up to 8 connections at once. They are saved with the project and in presets.
 - The macros start wired the same way in every factory preset: M1 Space (echo mix and feedback), M2 Talk (vokal resonance), M3 Chop (gate depth on the mid and high bands). M4 is free.
 
+### MIDI control
+
+OriginPsy listens to MIDI on any channel, so pads or clips can play the performance buttons:
+
+| MIDI | Does |
+| --- | --- |
+| Note C1 (36), held | **BRAKE** (Tape Stop slows down while held, comes back when let go) |
+| Note D1 (38) | **DROP** |
+| Note E1 (40) | Previous preset |
+| Note F1 (41) | Next preset |
+| Program Change n | Loads preset n of the list (0 = first factory preset; user presets follow the factory ones) |
+
+In Bitwig, put OriginPsy on an instrument track after the instrument, or use a Note Receiver on the audio track, and send it notes from a clip or controller. "MIDI" flashes in the header when a message does something.
+
 ### Presets
 
 The bar at the top lists factory presets by category (Init, Full-on, Dark, Prog, Build-up, Lead FX, Bass, Pads, Glitch), then your own. The genre sets are starting points for a whole track style: **Full-on** is bright and busy (Hijaz, 1/16 grooves, zaps, a riser with a tape stop every 16 bars), **Dark** is low and twisted (Hungarian and harmonic minor, robot voice, 1/32 glitch swarms, tape slow-downs), **Prog** is deep and smooth (Dorian and natural minor, slow orbits, long LFOs, a 32 bar journey). **Save** stores the whole state (parameters, drawn gate steps and modulation) as a `.originpsy` file in `Documents/AMV/OriginPsy Presets`. Subfolders there show up too.
