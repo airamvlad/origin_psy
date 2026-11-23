@@ -4,6 +4,8 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 
 ## General
 
+- [ ] Drag a slot card onto another: the two swap, the sound follows the new order without a click
+
 - [ ] The VST3 loads on an audio track and opens and closes without problems
 - [ ] The window can be resized by dragging the corner
 - [ ] A saved and reopened project restores every setting, including drawn gate steps
