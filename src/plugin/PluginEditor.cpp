@@ -709,7 +709,8 @@ TapePage::TapePage (OriginPsyProcessor& p)
     // Hold to brake; let go to come back.
     brake.setColour (juce::TextButton::buttonColourId, colours::orange.withAlpha (0.25f));
     brake.setColour (juce::TextButton::buttonOnColourId, colours::orange.withAlpha (0.8f));
-    brake.setTooltip ("Hold to slow the tape down, let go to bring it back. Automate Tape Brake to play it from the song.");
+    brake.setTooltip ("Hold to slow the tape down, let go to bring it back. Automate Tape Brake to play it from the song, "
+                      "or hold MIDI note C1.");
     brake.onStateChange = [this] {
         const bool down = brake.isDown();
         const bool on = proc.apvts.getRawParameterValue (params::tapeBrake)->load() > 0.5f;
@@ -731,7 +732,8 @@ void TapePage::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     drawPanel (g, r, colours::orange, "TAPE STOP");
-    brake.setToggleState (proc.apvts.getRawParameterValue (params::tapeBrake)->load() > 0.5f, juce::dontSendNotification);
+    brake.setToggleState (proc.apvts.getRawParameterValue (params::tapeBrake)->load() > 0.5f || proc.meters.midiBrake.load(),
+                          juce::dontSendNotification);
 
     // Two reels that turn at the tape speed.
     const float speed = proc.meters.tapeSpeed.load();
@@ -975,7 +977,7 @@ FrazaStrip::FrazaStrip (OriginPsyProcessor& p)
         addAndMakeVisible (*amounts.back());
     }
     drop.setColour (juce::TextButton::buttonColourId, colours::magenta.withAlpha (0.35f));
-    drop.setTooltip ("Ready-made build-up over the last 4 bars of the phrase");
+    drop.setTooltip ("Ready-made build-up over the last 4 bars of the phrase (MIDI note D1 does the same)");
     drop.onClick = [this] { proc.applyDropPreset(); };
 }
 
@@ -1282,6 +1284,17 @@ void OriginPsyEditor::paint (juce::Graphics& g)
     const juce::String tempo = juce::String (proc.meters.bpm.load(), 1) + " BPM"
                                + (proc.meters.hostPlaying.load() ? "" : "  (internal clock)");
     g.drawText (tempo, 170, 20, 150, 20, juce::Justification::left);
+
+    // Flashes when a MIDI note or program change did something.
+    const auto events = proc.meters.midiEvents.load();
+    if (events != lastMidiEvents) { lastMidiEvents = events; midiFlash = 1.0f; }
+    else midiFlash *= 0.8f;
+    if (midiFlash > 0.05f)
+    {
+        g.setColour (colours::cyan.withAlpha (midiFlash));
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        g.drawText ("MIDI", 170, 36, 40, 14, juce::Justification::left);
+    }
 }
 
 void OriginPsyEditor::resized()

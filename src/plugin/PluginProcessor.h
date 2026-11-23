@@ -28,7 +28,7 @@ public:
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return JucePlugin_Name; }
-    bool acceptsMidi() const override { return false; }
+    bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 12.0; }
@@ -53,6 +53,14 @@ public:
     /** Sets the Fraza amounts to a ready made build-up (the Drop button). */
     void applyDropPreset();
 
+    // MIDI control (any channel). Notes: C1 (36) held = BRAKE, D1 (38) = DROP,
+    // E1 (40) = previous preset, F1 (41) = next preset. Program Change n loads
+    // the n-th preset of the list (factory presets first, then the user's).
+    static constexpr int midiNoteBrake = 36, midiNoteDrop = 38, midiNotePrev = 40, midiNoteNext = 41;
+    /** Runs DROP and preset changes asked for by MIDI now (normally they run
+        on the message thread right after the block). */
+    void flushMidiActions() { midiActions.handleUpdateNowIfNeeded(); }
+
     // Read by the editor for its displays.
     struct Meters
     {
@@ -69,6 +77,8 @@ public:
         std::atomic<float> frazaValue { 0.0f };
         std::atomic<double> bpm { 140.0 };
         std::atomic<bool> hostPlaying { false };
+        std::atomic<uint32_t> midiEvents { 0 };   // counts MIDI messages that did something
+        std::atomic<bool> midiBrake { false };
         std::array<std::atomic<float>, originpsy::numModSources> source {};
     } meters;
 
@@ -99,6 +109,19 @@ private:
     void computeModulation (const originpsy::Transport&, float fraza, const float* left, const float* right, int numSamples);
     float value (const juce::String& id) const { return apvts.getRawParameterValue (id)->load(); }
     float m (const juce::String& id) const; // value after modulation
+    void handleMidi (const juce::MidiBuffer&);
+
+    /** DROP and preset changes touch many parameters, so MIDI only asks for
+        them and they run on the message thread. */
+    struct MidiActions : juce::AsyncUpdater
+    {
+        explicit MidiActions (OriginPsyProcessor& p) : proc (p) {}
+        void handleAsyncUpdate() override;
+        OriginPsyProcessor& proc;
+        std::atomic<bool> drop { false };
+        std::atomic<int> program { -1 }, step { 0 };
+    } midiActions { *this };
+    bool midiBrake = false;
 
     originpsy::Chain chain;
     originpsy::InternalClock clock;

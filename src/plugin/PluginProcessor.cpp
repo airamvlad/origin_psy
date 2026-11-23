@@ -197,20 +197,92 @@ void OriginPsyProcessor::updateModules()
     TapeStop::Params tp;
     tp.mode = (int) m (params::tapeMode);
     tp.trigger = (int) m (params::tapeTrigger);
-    tp.brake = value (params::tapeBrake) > 0.5f;
+    tp.brake = value (params::tapeBrake) > 0.5f || midiBrake;
     tp.length = (int) m (params::tapeLength);
     tp.curve = m (params::tapeCurve);
     tp.mix = m (params::tapeMix);
     chain.tape.setParams (tp);
 }
 
-void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void OriginPsyProcessor::handleMidi (const juce::MidiBuffer& midi)
+{
+    bool asked = false;
+    uint32_t used = 0;
+    for (const auto meta : midi)
+    {
+        const auto msg = meta.getMessage();
+        if (msg.isNoteOn())
+        {
+            switch (msg.getNoteNumber())
+            {
+                case midiNoteBrake: midiBrake = true; break;
+                case midiNoteDrop: midiActions.drop = true; asked = true; break;
+                case midiNotePrev: --midiActions.step; asked = true; break;
+                case midiNoteNext: ++midiActions.step; asked = true; break;
+                default: continue;
+            }
+            ++used;
+        }
+        else if (msg.isNoteOff() && msg.getNoteNumber() == midiNoteBrake)
+        {
+            midiBrake = false;
+            ++used;
+        }
+        else if (msg.isProgramChange())
+        {
+            midiActions.program = msg.getProgramChangeNumber();
+            midiActions.step = 0;
+            asked = true;
+            ++used;
+        }
+        else if (msg.isAllNotesOff() || msg.isAllSoundOff())
+        {
+            midiBrake = false;
+        }
+    }
+    if (used > 0) meters.midiEvents += used;
+    meters.midiBrake = midiBrake;
+    if (asked) midiActions.triggerAsyncUpdate();
+}
+
+void OriginPsyProcessor::MidiActions::handleAsyncUpdate()
+{
+    if (drop.exchange (false)) proc.applyDropPreset();
+
+    const int prog = program.exchange (-1);
+    const int delta = step.exchange (0);
+    if (prog < 0 && delta == 0) return;
+
+    PresetManager presets (proc);
+    const auto entries = presets.list();
+    if (entries.empty()) return;
+    const int count = (int) entries.size();
+    int index = -1;
+    if (prog >= 0)
+    {
+        if (prog >= count) return;
+        index = prog;
+    }
+    else
+    {
+        int current = -1;
+        for (int i = 0; i < count && current < 0; ++i)
+            if (entries[(size_t) i].name == proc.currentPresetName) current = i;
+        index = current < 0 ? (delta > 0 ? 0 : count - 1) : current + delta;
+        index = ((index % count) + count) % count;
+    }
+    presets.load (entries[(size_t) index]);
+}
+
+void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
     const int numSamples = buffer.getNumSamples();
     const int numIn = getTotalNumInputChannels();
     for (int ch = numIn; ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, numSamples);
+    handleMidi (midi);
+    midi.clear();
     if (numSamples == 0) return;
 
     const auto t = readTransport (numSamples);
