@@ -66,7 +66,7 @@ void parameters()
 {
     OriginPsyProcessor p;
     const auto& all = p.getParameters();
-    check (all.size() >= 85, "all module parameters are exposed to the host");
+    check (all.size() >= 103, "all module parameters are exposed to the host");
     juce::StringArray ids;
     for (auto* prm : all)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
@@ -121,10 +121,26 @@ void allModulesAndFraza()
     setValue (p, params::echoFeedback, 1.0f);
     setValue (p, params::vokalResonance, 1.0f);
     setValue (p, params::vokalCharacter, 2.0f);
+    setValue (p, params::slotModule (3), (float) ModuleType::zapResonator);
+    setValue (p, params::zapThreshold, -60.0f);
+    setValue (p, params::zapMix, 1.0f);
     p.prepareToPlay (48000.0, 256);
     const auto out = run (p, 48000.0, 256, 48000 * 8);
     check (healthy (out), "all modules with Drop and maximum settings stay bounded");
     check (p.apvts.getRawParameterValue (params::frazaTargets[0].id)->load() > 0.1f, "Drop sets the Phrase amounts");
+
+    OriginPsyProcessor o;
+    setValue (o, params::slotModule (0), (float) ModuleType::orbitDoppler);
+    setValue (o, params::slotModule (1), (float) ModuleType::zapResonator);
+    setValue (o, params::slotModule (2), (float) ModuleType::fraktalEcho);
+    setValue (o, params::orbitRadius, 30.0f);
+    setValue (o, params::orbitDoppler, 1.0f);
+    setValue (o, params::orbitRate, 0.0f);
+    for (double rate : { 44100.0, 96000.0 })
+    {
+        o.prepareToPlay (rate, 512);
+        check (healthy (run (o, rate, 512, (int) rate * 3)), "Orbit Doppler and Zap Resonator stay bounded");
+    }
 }
 
 void state()

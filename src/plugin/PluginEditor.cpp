@@ -12,6 +12,8 @@ juce::Colour moduleColour (int type)
         case ModuleType::fraktalEcho:   return colours::cyan;
         case ModuleType::vokalAcid:     return colours::magenta;
         case ModuleType::polimetarGate: return colours::amber;
+        case ModuleType::zapResonator:  return colours::lime;
+        case ModuleType::orbitDoppler:  return colours::blue;
         case ModuleType::empty:         break;
     }
     return colours::dim;
@@ -518,6 +520,181 @@ void VokalPage::resized()
 }
 
 //==============================================================================
+ZapPage::ZapPage (OriginPsyProcessor& p)
+    : proc (p),
+      scale (p.apvts, params::zapScale, "Scale"),
+      root (p.apvts, params::zapRoot, "Root"),
+      order (p.apvts, params::zapOrder, "Note order"),
+      threshold (p.apvts, params::zapThreshold, "Threshold", colours::lime),
+      octave (p.apvts, params::zapOctave, "Octave", colours::lime),
+      sweep (p.apvts, params::zapSweep, "Sweep", colours::lime),
+      sweepTime (p.apvts, params::zapSweepTime, "Sweep Time", colours::lime),
+      decay (p.apvts, params::zapDecay, "Decay", colours::lime),
+      resonance (p.apvts, params::zapResonance, "Resonance", colours::lime),
+      width (p.apvts, params::zapWidth, "Width", colours::lime),
+      mix (p.apvts, params::zapMix, "Mix", colours::lime)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &scale, &root, &order, &threshold, &octave, &sweep,
+                                                             &sweepTime, &decay, &resonance, &width, &mix })
+        addAndMakeVisible (c);
+}
+
+void ZapPage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawPanel (g, r, colours::lime, "ZAP RESONATOR");
+
+    auto value = [this] (const juce::String& id) { return proc.apvts.getRawParameterValue (id)->load(); };
+    ZapResonator::Params zp;
+    zp.scale = (int) value (params::zapScale);
+    zp.root = (int) value (params::zapRoot);
+    zp.octave = (int) value (params::zapOctave);
+    const float sweepSt = value (params::zapSweep);
+    const float sweepMs = value (params::zapSweepTime), decayMs = value (params::zapDecay);
+
+    const auto hits = proc.meters.zapHits.load();
+    if (hits != lastHits) { lastHits = hits; flash = 1.0f; }
+    else flash *= 0.85f;
+
+    // One zap: pitch glides from the sweep onto the note while it fades.
+    auto area = r.withWidth (560.0f).reduced (24.0f, 34.0f).withTrimmedBottom (54.0f);
+    g.setColour (colours::outline);
+    const float noteY = area.getY() + area.getHeight() * (sweepSt >= 0.0f ? 0.8f : 0.2f);
+    g.drawHorizontalLine ((int) noteY, area.getX(), area.getRight());
+    const float span = std::max (decayMs * 1.2f, 50.0f);
+    juce::Path curve;
+    for (int i = 0; i <= 120; ++i)
+    {
+        const float tMs = span * (float) i / 120.0f;
+        const float pitch = sweepSt * std::exp (-tMs / std::max (1.0f, sweepMs));
+        const float x = area.getX() + area.getWidth() * (float) i / 120.0f;
+        const float y = noteY - pitch / 48.0f * area.getHeight() * 0.75f;
+        if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
+    }
+    g.setColour (colours::lime.withAlpha (0.35f + 0.65f * flash));
+    g.strokePath (curve, juce::PathStrokeType (2.0f + 2.0f * flash));
+    g.setColour (colours::dim);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText (juce::String::fromUTF8 ("time →"), area.withTop (area.getBottom() + 2.0f).withHeight (14.0f), juce::Justification::centredRight);
+    g.drawText ("pitch of one zap", area.withHeight (14.0f).translated (0.0f, -18.0f), juce::Justification::centredRight);
+
+    // The notes zaps land on; the last one lights up.
+    const int count = ZapResonator::notesInRange (zp);
+    const int last = proc.meters.zapNote.load();
+    auto row = r.withWidth (560.0f).reduced (24.0f, 0.0f).withTop (r.getBottom() - 70.0f).withHeight (34.0f);
+    const float w = row.getWidth() / (float) count;
+    for (int i = 0; i < count; ++i)
+    {
+        const int note = ZapResonator::noteForStep (zp, i);
+        auto cell = juce::Rectangle<float> (row.getX() + w * (float) i, row.getY(), w, row.getHeight()).reduced (1.5f, 0.0f);
+        const bool lit = note == last;
+        g.setColour (lit ? colours::lime.withAlpha (0.3f + 0.7f * flash) : colours::panelLight);
+        g.fillRoundedRectangle (cell, 3.0f);
+        g.setColour (lit ? colours::text : colours::dim);
+        g.setFont (juce::FontOptions (w > 22.0f ? 11.0f : 9.0f));
+        g.drawText (noteNames[note % 12] + juce::String (note / 12 - 1), cell, juce::Justification::centred);
+    }
+}
+
+void ZapPage::resized()
+{
+    auto r = getLocalBounds().withTrimmedLeft (576).reduced (12, 30);
+    auto top = r.removeFromTop (46);
+    const int cw = top.getWidth() / 3;
+    scale.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    root.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    order.setBounds (top.reduced (4, 0));
+    r.removeFromTop (8);
+    const int kw = r.getWidth() / 4, kh = r.getHeight() / 2;
+    juce::Component* knobs[] = { &threshold, &octave, &sweep, &sweepTime, &decay, &resonance, &width, &mix };
+    for (int i = 0; i < 8; ++i)
+        knobs[i]->setBounds (r.getX() + (i % 4) * kw, r.getY() + (i / 4) * kh, kw, kh);
+}
+
+//==============================================================================
+OrbitPage::OrbitPage (OriginPsyProcessor& p)
+    : proc (p),
+      path (p.apvts, params::orbitPath, "Path"),
+      rate (p.apvts, params::orbitRate, "One lap"),
+      radius (p.apvts, params::orbitRadius, "Radius", colours::blue),
+      doppler (p.apvts, params::orbitDoppler, "Doppler", colours::blue),
+      tone (p.apvts, params::orbitTone, "Distance Tone", colours::blue),
+      width (p.apvts, params::orbitWidth, "Width", colours::blue),
+      mix (p.apvts, params::orbitMix, "Mix", colours::blue)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &path, &rate, &radius, &doppler, &tone, &width, &mix })
+        addAndMakeVisible (c);
+}
+
+void OrbitPage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawPanel (g, r, colours::blue, "ORBIT DOPPLER");
+
+    // Seen from above: the listener in the middle, facing up.
+    auto area = r.withWidth (560.0f).reduced (24.0f, 30.0f).withTrimmedTop (6.0f);
+    const int pathIndex = (int) proc.apvts.getRawParameterValue (params::orbitPath)->load();
+    const float w = proc.apvts.getRawParameterValue (params::orbitWidth)->load();
+    const float scale = std::min (area.getWidth() / 5.0f, area.getHeight() / 2.8f);
+    const juce::Point<float> head (area.getCentreX(), area.getY() + 1.7f * scale);
+    auto toScreen = [&] (float x, float y) { return juce::Point<float> (head.x + x * w * scale, head.y - y * scale); };
+
+    juce::Path orbit;
+    for (int i = 0; i <= 240; ++i)
+    {
+        const auto pt = OrbitDoppler::pathPoint (pathIndex, i / 240.0);
+        const auto s = toScreen (pt.x, pt.y);
+        if (i == 0) orbit.startNewSubPath (s); else orbit.lineTo (s);
+    }
+    g.setColour (colours::blue.withAlpha (0.35f));
+    g.strokePath (orbit, juce::PathStrokeType (1.5f));
+
+    // Head with ears and nose.
+    g.setColour (colours::panelLight);
+    g.fillEllipse (juce::Rectangle<float> (26.0f, 26.0f).withCentre (head));
+    g.setColour (colours::dim);
+    g.drawEllipse (juce::Rectangle<float> (26.0f, 26.0f).withCentre (head), 1.2f);
+    g.fillEllipse (juce::Rectangle<float> (6.0f, 10.0f).withCentre (head.translated (-14.0f, 0.0f)));
+    g.fillEllipse (juce::Rectangle<float> (6.0f, 10.0f).withCentre (head.translated (14.0f, 0.0f)));
+    juce::Path nose;
+    nose.addTriangle (head.x - 4.0f, head.y - 12.0f, head.x + 4.0f, head.y - 12.0f, head.x, head.y - 19.0f);
+    g.fillPath (nose);
+
+    // The sound, with a short trail.
+    const auto now = toScreen (proc.meters.orbitX.load(), proc.meters.orbitY.load());
+    trail[(size_t) trailPos] = now;
+    trailPos = (trailPos + 1) % (int) trail.size();
+    for (size_t i = 0; i < trail.size(); ++i)
+    {
+        const auto age = (float) (((size_t) trailPos + trail.size() - 1 - i) % trail.size()) / (float) trail.size();
+        if (trail[i] == juce::Point<float>()) continue;
+        g.setColour (colours::blue.withAlpha (0.5f * (1.0f - age)));
+        g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre (trail[i]));
+    }
+    g.setColour (colours::text);
+    g.fillEllipse (juce::Rectangle<float> (14.0f, 14.0f).withCentre (now));
+    g.setColour (colours::blue);
+    g.drawEllipse (juce::Rectangle<float> (14.0f, 14.0f).withCentre (now), 2.0f);
+
+    g.setColour (colours::dim);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText ("front", area.withHeight (14.0f), juce::Justification::centredTop);
+}
+
+void OrbitPage::resized()
+{
+    auto r = getLocalBounds().withTrimmedLeft (576).reduced (12, 30);
+    auto top = r.removeFromTop (46);
+    path.setBounds (top.removeFromLeft (top.getWidth() / 2).reduced (4, 0));
+    rate.setBounds (top.reduced (4, 0));
+    r.removeFromTop (8);
+    const int kw = r.getWidth() / 4, kh = r.getHeight() / 2;
+    juce::Component* knobs[] = { &radius, &doppler, &tone, &width, &mix };
+    for (int i = 0; i < 5; ++i)
+        knobs[i]->setBounds (r.getX() + (i % 4) * kw, r.getY() + (i / 4) * kh, kw, kh);
+}
+
+//==============================================================================
 GateRing::GateRing (OriginPsyProcessor& p, int b) : proc (p), band (b) {}
 
 void GateRing::paint (juce::Graphics& g)
@@ -952,7 +1129,7 @@ void SlotCard::mouseUp (const juce::MouseEvent&) { onSelect (moduleType()); }
 //==============================================================================
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
-      echoPage (p), vokalPage (p), gatePage (p), fraza (p), modStrip (p), presetBar (p),
+      echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), fraza (p), modStrip (p), presetBar (p),
       output (p.apvts, params::outGain, "Output", colours::cyan, true)
 {
     setLookAndFeel (&lnf);
@@ -964,6 +1141,8 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addChildComponent (echoPage);
     addChildComponent (vokalPage);
     addChildComponent (gatePage);
+    addChildComponent (zapPage);
+    addChildComponent (orbitPage);
     addAndMakeVisible (fraza);
     addAndMakeVisible (modStrip);
     addAndMakeVisible (presetBar);
@@ -986,6 +1165,8 @@ void OriginPsyEditor::showModule (int type)
     echoPage.setVisible (type == (int) ModuleType::fraktalEcho);
     vokalPage.setVisible (type == (int) ModuleType::vokalAcid);
     gatePage.setVisible (type == (int) ModuleType::polimetarGate);
+    zapPage.setVisible (type == (int) ModuleType::zapResonator);
+    orbitPage.setVisible (type == (int) ModuleType::orbitDoppler);
     for (auto& c : cards)
     {
         c->selected = c->moduleType() == type;
@@ -1022,7 +1203,8 @@ void OriginPsyEditor::resized()
 
     for (int i = 0; i < Chain::numSlots; ++i)
         place (*cards[(size_t) i], { 16 + i * 255, 60, 243, 76 });
-    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage })
+    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
+                                (juce::Component*) &zapPage, (juce::Component*) &orbitPage })
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
@@ -1039,7 +1221,8 @@ void OriginPsyEditor::timerCallback()
     for (auto& c : cards) c->repaint();
     modStrip.repaint();
     // Knobs show their modulation live.
-    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage })
+    for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
+                                (juce::Component*) &zapPage, (juce::Component*) &orbitPage })
         if (page->isVisible()) page->repaint();
     if (proc.currentPresetName != presetBar.shownName) presetBar.syncName();
     repaint (getLocalBounds().withHeight (getHeight() * 56 / 790));
