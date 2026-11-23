@@ -43,6 +43,230 @@ const std::vector<PresetManager::Factory>& PresetManager::factoryPresets()
     static const std::vector<Factory> presets {
         { "Init", "Init", [] (OriginPsyProcessor& p) { macros (p); } },
 
+        // Full-on: bright, busy, Hijaz and Phrygian, everything on the 1/16 grid.
+        { "Full-on Rolling Talk", "Full-on", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::vokalAcid, ModuleType::polimetarGate, ModuleType::fraktalEcho);
+              set (p, params::vokalCharacter, 1.0f);  // female
+              set (p, params::vokalGlide, 30.0f);
+              set (p, params::vokalResonance, 0.7f);
+              set (p, params::vokalAccent, 0.9f);
+              set (p, params::gateBand (0, "depth"), 0.0f);
+              set (p, params::gateBand (1, "steps"), 16.0f);
+              set (p, params::gateBand (1, "hits"), 11.0f);
+              set (p, params::gateBand (1, "depth"), 0.7f);
+              set (p, params::gateBand (2, "steps"), 12.0f);
+              set (p, params::gateBand (2, "hits"), 7.0f);
+              set (p, params::gateBand (2, "depth"), 0.8f);
+              set (p, params::echoTime, 3.0f);        // 1/16D
+              set (p, params::echoScale, 1.0f);       // Hijaz
+              set (p, params::echoMix, 0.15f);
+              set (p, params::lfoRate (1), 5.0f);     // 1/2
+              macros (p);
+              connect (p, ModSource::lfo2, params::vokalShift, 0.15f);
+          } },
+
+        { "Full-on Lead Spiral", "Full-on", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::fraktalEcho, ModuleType::orbitDoppler, ModuleType::empty);
+              set (p, params::echoTime, 6.0f);        // 1/8D
+              set (p, params::echoScale, 1.0f);       // Hijaz
+              set (p, params::echoGenerations, 4.0f);
+              set (p, params::echoSpread, 3.0f);
+              set (p, params::echoFeedback, 0.55f);
+              set (p, params::echoDamp, 0.25f);
+              set (p, params::echoWidth, 0.95f);
+              set (p, params::echoMix, 0.4f);
+              set (p, params::orbitPath, 2.0f);       // spiral
+              set (p, params::orbitRate, 7.0f);       // 2 bars
+              set (p, params::orbitMix, 0.5f);
+              set (p, params::lfoRate (0), 6.0f);     // 1 bar
+              macros (p);
+              connect (p, ModSource::lfo1, params::echoDamp, 0.25f);
+          } },
+
+        { "Full-on Zap Groove", "Full-on", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::zapResonator, ModuleType::polimetarGate, ModuleType::fraktalEcho);
+              set (p, params::zapScale, 1.0f);        // Hijaz
+              set (p, params::zapThreshold, -34.0f);
+              set (p, params::zapOrder, 0.0f);        // up
+              set (p, params::zapSweep, 36.0f);
+              set (p, params::zapSweepTime, 50.0f);
+              set (p, params::zapDecay, 180.0f);
+              set (p, params::zapMix, 0.4f);
+              set (p, params::gateBand (0, "depth"), 0.0f);
+              set (p, params::gateBand (1, "depth"), 0.4f);
+              set (p, params::gateBand (2, "steps"), 16.0f);
+              set (p, params::gateBand (2, "hits"), 9.0f);
+              set (p, params::gateBand (2, "depth"), 0.9f);
+              set (p, params::echoTime, 2.0f);        // 1/16
+              set (p, params::echoMix, 0.2f);
+              macros (p);
+              connect (p, ModSource::lfo2, params::zapSweep, 0.12f);
+          } },
+
+        { "Full-on Riser Machine", "Full-on", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::vokalAcid, ModuleType::polimetarGate, ModuleType::fraktalEcho, ModuleType::tapeStop);
+              p.applyDropPreset();
+              set (p, params::frazaCurve, 4.0f);      // last 4 bars
+              set (p, params::echoScale, 1.0f);       // Hijaz
+              set (p, params::echoSpread, 4.0f);
+              set (p, params::vokalAccent, 0.8f);
+              set (p, params::tapeMode, 0.0f);        // stop
+              set (p, params::tapeTrigger, 4.0f);     // every 16 bars
+              set (p, params::tapeLength, 2.0f);      // 1/4
+              set (p, params::tapeCurve, 0.7f);
+              macros (p);
+              connect (p, ModSource::fraza, params::gateBand (2, "length"), -0.35f);
+          } },
+
+        // Dark: night and forest. Low, dark, harmonic and Hungarian minor, robots and glitches.
+        { "Dark Forest Echoes", "Dark", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::fraktalEcho, ModuleType::orbitDoppler, ModuleType::empty);
+              set (p, params::echoTime, 1.0f);        // 1/16T
+              set (p, params::echoScale, 5.0f);       // Hungarian Minor
+              set (p, params::echoGenerations, 4.0f);
+              set (p, params::echoSpread, -3.0f);
+              set (p, params::echoFeedback, 0.65f);
+              set (p, params::echoDamp, 0.7f);
+              set (p, params::echoMix, 0.35f);
+              set (p, params::orbitPath, 0.0f);       // circle
+              set (p, params::orbitRate, 8.0f);       // 4 bars
+              set (p, params::orbitRadius, 15.0f);
+              set (p, params::orbitTone, 0.8f);
+              set (p, params::orbitMix, 0.6f);
+              macros (p);
+              connect (p, ModSource::lfo2, params::echoSpread, -0.2f);
+          } },
+
+        { "Dark Robot Mantra", "Dark", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::vokalAcid, ModuleType::polimetarGate, ModuleType::empty);
+              set (p, params::vokalCharacter, 2.0f);  // robot
+              set (p, params::vokalDrive, 0.6f);
+              set (p, params::vokalResonance, 0.75f);
+              set (p, params::vokalShift, -5.0f);
+              set (p, params::vokalGlide, 15.0f);
+              set (p, params::gateBand (0, "depth"), 0.2f);
+              for (int b = 1; b < 3; ++b)
+              {
+                  set (p, params::gateBand (b, "rate"), 0.0f);   // 1/32
+                  set (p, params::gateBand (b, "depth"), 0.9f);
+                  set (p, params::gateBand (b, "release"), 6.0f);
+              }
+              set (p, params::gateBand (1, "steps"), 13.0f);
+              set (p, params::gateBand (1, "hits"), 8.0f);
+              set (p, params::gateBand (2, "steps"), 11.0f);
+              set (p, params::gateBand (2, "hits"), 5.0f);
+              macros (p);
+              connect (p, ModSource::envelope, params::vokalShift, 0.25f);
+          } },
+
+        { "Dark Glitch Swarm", "Dark", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::polimetarGate, ModuleType::zapResonator, ModuleType::empty);
+              for (int b = 0; b < 3; ++b)
+              {
+                  set (p, params::gateBand (b, "rate"), 0.0f);   // 1/32
+                  set (p, params::gateBand (b, "depth"), 1.0f);
+                  set (p, params::gateBand (b, "release"), 2.0f);
+              }
+              set (p, params::gateBand (0, "steps"), 13.0f);
+              set (p, params::gateBand (1, "steps"), 11.0f);
+              set (p, params::gateBand (2, "steps"), 9.0f);
+              set (p, params::zapScale, 2.0f);        // Harmonic Minor
+              set (p, params::zapOctave, 3.0f);
+              set (p, params::zapSweep, -36.0f);
+              set (p, params::zapDecay, 120.0f);
+              set (p, params::zapResonance, 0.4f);
+              set (p, params::zapOrder, 2.0f);        // random
+              set (p, params::zapMix, 0.35f);
+              set (p, params::lfoShape (0), 5.0f);    // random
+              set (p, params::lfoRate (0), 5.0f);     // 1/2
+              macros (p);
+              connect (p, ModSource::lfo1, params::gateBand (1, "rotate"), 0.5f);
+              connect (p, ModSource::lfo1, params::gateBand (2, "rotate"), 0.3f);
+          } },
+
+        { "Dark Tape Collapse", "Dark", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::fraktalEcho, ModuleType::tapeStop, ModuleType::empty);
+              set (p, params::echoTime, 6.0f);        // 1/8D
+              set (p, params::echoScale, 2.0f);       // Harmonic Minor
+              set (p, params::echoSpread, -2.0f);
+              set (p, params::echoDamp, 0.65f);
+              set (p, params::echoFeedback, 0.5f);
+              set (p, params::echoMix, 0.3f);
+              set (p, params::tapeMode, 2.0f);        // slow down
+              set (p, params::tapeTrigger, 3.0f);     // every 8 bars
+              set (p, params::tapeLength, 3.0f);      // 1/2
+              set (p, params::tapeCurve, 0.3f);
+              macros (p);
+          } },
+
+        // Prog: deep and smooth. Dorian and natural minor, long LFOs, long phrases.
+        { "Prog Breathing Pad", "Prog", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::polimetarGate, ModuleType::fraktalEcho, ModuleType::empty);
+              set (p, params::gateBand (0, "depth"), 0.2f);
+              set (p, params::gateBand (1, "rate"), 5.0f);   // 1/8
+              set (p, params::gateBand (1, "steps"), 16.0f);
+              set (p, params::gateBand (1, "hits"), 5.0f);
+              set (p, params::gateBand (1, "length"), 0.9f);
+              set (p, params::gateBand (1, "release"), 120.0f);
+              set (p, params::gateBand (1, "depth"), 0.6f);
+              set (p, params::gateBand (2, "steps"), 12.0f);
+              set (p, params::gateBand (2, "hits"), 7.0f);
+              set (p, params::gateBand (2, "length"), 0.5f);
+              set (p, params::gateBand (2, "depth"), 0.5f);
+              set (p, params::echoTime, 9.0f);        // 1/4D
+              set (p, params::echoScale, 6.0f);       // Dorian
+              set (p, params::echoGenerations, 2.0f);
+              set (p, params::echoDamp, 0.5f);
+              set (p, params::echoMix, 0.25f);
+              set (p, params::lfoRate (0), 8.0f);     // 4 bars
+              macros (p);
+              connect (p, ModSource::lfo1, params::gateBand (1, "length"), 0.2f);
+          } },
+
+        { "Prog Slow Orbit", "Prog", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::orbitDoppler, ModuleType::fraktalEcho, ModuleType::empty);
+              set (p, params::orbitPath, 0.0f);       // circle
+              set (p, params::orbitRate, 9.0f);       // 8 bars
+              set (p, params::orbitRadius, 8.0f);
+              set (p, params::orbitDoppler, 0.25f);
+              set (p, params::orbitMix, 0.6f);
+              set (p, params::echoTime, 6.0f);        // 1/8D
+              set (p, params::echoScale, 3.0f);       // Natural Minor
+              set (p, params::echoWidth, 1.0f);
+              set (p, params::echoMix, 0.2f);
+              macros (p);
+          } },
+
+        { "Prog Soft Talk", "Prog", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::vokalAcid, ModuleType::fraktalEcho, ModuleType::empty);
+              set (p, params::vokalCharacter, 1.0f);  // female
+              set (p, params::vokalGlide, 120.0f);
+              set (p, params::vokalResonance, 0.4f);
+              set (p, params::vokalAccent, 0.4f);
+              set (p, params::vokalMix, 0.6f);
+              set (p, params::echoTime, 8.0f);        // 1/4
+              set (p, params::echoScale, 6.0f);       // Dorian
+              set (p, params::echoMix, 0.2f);
+              set (p, params::lfoRate (0), 9.0f);     // 8 bars
+              macros (p);
+              connect (p, ModSource::lfo1, params::vokalShift, 0.12f);
+          } },
+
+        { "Prog 32 Bar Journey", "Prog", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::polimetarGate, ModuleType::fraktalEcho, ModuleType::orbitDoppler);
+              set (p, params::frazaBars, 2.0f);       // 32 bars
+              set (p, params::frazaCurve, 1.0f);      // rise (late)
+              set (p, params::frazaTargets[0].id, 0.35f);
+              set (p, params::frazaTargets[1].id, 0.3f);
+              set (p, params::frazaTargets[2].id, -0.4f);
+              set (p, params::frazaTargets[5].id, 0.5f);
+              set (p, params::echoScale, 3.0f);       // Natural Minor
+              set (p, params::echoTime, 6.0f);        // 1/8D
+              set (p, params::orbitRate, 9.0f);       // 8 bars
+              set (p, params::orbitMix, 0.4f);
+              macros (p);
+          } },
+
         { "Talking Acid", "Bass", [] (OriginPsyProcessor& p) {
               slots (p, ModuleType::vokalAcid, ModuleType::fraktalEcho, ModuleType::empty);
               set (p, params::vokalGlide, 40.0f);
@@ -308,7 +532,7 @@ juce::File PresetManager::userFolder()
 std::vector<PresetManager::Entry> PresetManager::list() const
 {
     std::vector<Entry> out;
-    const char* order[] = { "Init", "Build-up", "Lead FX", "Bass", "Pads", "Glitch" };
+    const char* order[] = { "Init", "Full-on", "Dark", "Prog", "Build-up", "Lead FX", "Bass", "Pads", "Glitch" };
     const auto& factory = factoryPresets();
     for (const char* category : order)
         for (size_t i = 0; i < factory.size(); ++i)
