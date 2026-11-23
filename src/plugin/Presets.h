@@ -52,6 +52,11 @@ public:
         M1 Space (echo), M2 Talk (vokal), M3 Chop (gate). M4 is free. */
     static void wireMacros (OriginPsyProcessor&);
 
+    /** New random settings for the modules in the chain (mutate = only nudge
+        them a little). Slots, output, macros, modulation and the Brake button
+        are left alone; mixes and feedback stay in a usable range. */
+    static void randomize (OriginPsyProcessor&, bool mutateOnly, juce::Random&);
+
     void setUserFolderForTests (const juce::File& f) { overrideFolder = f; }
 
 private:

@@ -63,6 +63,15 @@ inline const juce::String tapeLength = "tape_length";
 inline const juce::String tapeCurve = "tape_curve";
 inline const juce::String tapeMix = "tape_mix";
 
+inline const juce::String ratchetRate = "ratchet_rate";
+inline const juce::String ratchetSteps = "ratchet_steps";
+inline const juce::String ratchetInterval = "ratchet_interval";
+inline const juce::String ratchetScale = "ratchet_scale";
+inline const juce::String ratchetMask = "ratchet_mask";
+inline const juce::String ratchetSmear = "ratchet_smear";
+inline const juce::String ratchetTilt = "ratchet_tilt";
+inline const juce::String ratchetMix = "ratchet_mix";
+
 inline juce::String lfoRate (int i) { return "lfo" + juce::String (i + 1) + "_rate"; }
 inline juce::String lfoShape (int i) { return "lfo" + juce::String (i + 1) + "_shape"; }
 inline juce::String macro (int i) { return "macro" + juce::String (i + 1); }

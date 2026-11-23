@@ -3,6 +3,7 @@
 #include "FraktalEcho.h"
 #include "OrbitDoppler.h"
 #include "PolimetarGate.h"
+#include "SpectralRatchet.h"
 #include "TapeStop.h"
 #include "VokalAcid.h"
 #include "ZapResonator.h"
@@ -12,8 +13,8 @@
 namespace originpsy
 {
 
-enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler, tapeStop };
-constexpr int numModuleTypes = 7;
+enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler, tapeStop, spectralRatchet };
+constexpr int numModuleTypes = 8;
 
 inline const char* moduleName (ModuleType t) noexcept
 {
@@ -25,6 +26,7 @@ inline const char* moduleName (ModuleType t) noexcept
         case ModuleType::zapResonator:  return "Zap Resonator";
         case ModuleType::orbitDoppler:  return "Orbit Doppler";
         case ModuleType::tapeStop:      return "Tape Stop";
+        case ModuleType::spectralRatchet: return "Spectral Ratchet";
         case ModuleType::empty:         break;
     }
     return "Empty";
@@ -72,6 +74,7 @@ public:
     ZapResonator zap;
     OrbitDoppler orbit;
     TapeStop tape;
+    SpectralRatchet ratchet;
 
     void prepare (double sampleRate, int maxBlock)
     {
@@ -82,6 +85,7 @@ public:
         zap.prepare (sampleRate, maxBlock);
         orbit.prepare (sampleRate, maxBlock);
         tape.prepare (sampleRate, maxBlock);
+        ratchet.prepare (sampleRate, maxBlock);
         fadeSamples = std::max (1, (int) (sampleRate * 0.008));
         reset();
     }
@@ -94,12 +98,21 @@ public:
         zap.reset();
         orbit.reset();
         tape.reset();
+        ratchet.reset();
         fadeGain = 1.0f;
         fadingOut = false;
         active = pending;
     }
 
     void setLayout (const Layout& l) noexcept { pending = l; }
+
+    /** Latency of a layout in samples (only Spectral Ratchet has any). */
+    static int latencyOf (const Layout& l) noexcept
+    {
+        for (auto type : l.effective())
+            if (type == ModuleType::spectralRatchet) return SpectralRatchet::latency;
+        return 0;
+    }
     const Layout& activeLayout() const noexcept { return active; }
 
     /** `key` is the mono sidechain signal, or nullptr when the host sends none. */
@@ -120,6 +133,7 @@ public:
                 case ModuleType::zapResonator:  zap.process (left, right, numSamples, t, key); break;
                 case ModuleType::orbitDoppler:  orbit.process (left, right, numSamples, t); break;
                 case ModuleType::tapeStop:      tape.process (left, right, numSamples, t); break;
+                case ModuleType::spectralRatchet: ratchet.process (left, right, numSamples, t); break;
                 case ModuleType::empty: break;
             }
         }
@@ -156,6 +170,7 @@ private:
             case ModuleType::zapResonator:  zap.reset(); break;
             case ModuleType::orbitDoppler:  orbit.reset(); break;
             case ModuleType::tapeStop:      tape.reset(); break;
+            case ModuleType::spectralRatchet: ratchet.reset(); break;
             case ModuleType::empty: break;
         }
     }

@@ -1,5 +1,6 @@
 #include "dsp/Chain.h"
 #include "dsp/Fraza.h"
+#include "dsp/Fft.h"
 #include "dsp/Modulation.h"
 #include "dsp/Scales.h"
 
@@ -398,7 +399,7 @@ void performanceTest()
     Chain c2;
     c2.prepare (sr, 256);
     Chain::Layout two;
-    two.slots = { ModuleType::zapResonator, ModuleType::orbitDoppler, ModuleType::empty, ModuleType::empty };
+    two.slots = { ModuleType::zapResonator, ModuleType::orbitDoppler, ModuleType::spectralRatchet, ModuleType::empty };
     c2.setLayout (two);
     c2.reset();
     auto l2 = saw (110.0, (size_t) sr * seconds), r2 = l2;
@@ -406,7 +407,7 @@ void performanceTest()
     const auto start2 = std::chrono::steady_clock::now();
     run (c2, l2, r2, 145.0);
     const double elapsed2 = std::chrono::duration<double> (std::chrono::steady_clock::now() - start2).count();
-    std::printf ("CPU: Zap Resonator + Orbit Doppler = %.2f %% of one core at 48 kHz\n", elapsed2 / (double) seconds * 100.0);
+    std::printf ("CPU: Zap Resonator + Orbit Doppler + Spectral Ratchet = %.2f %% of one core at 48 kHz\n", elapsed2 / (double) seconds * 100.0);
     check (allFinite (l2) && allFinite (r2), "zap and orbit chain output is finite");
 }
 
@@ -658,6 +659,105 @@ void tapeTests()
     check (nerr < 1.0e-6, "tape stop with mix 0 is a null test");
 }
 
+void ratchetTests()
+{
+    // FFT round trip.
+    Fft f;
+    f.prepare (8);
+    std::vector<std::complex<float>> x (256), y;
+    for (int i = 0; i < 256; ++i) x[(size_t) i] = { (float) std::sin (i * 0.37) + 0.2f * (float) (i % 7), 0.0f };
+    y = x;
+    f.perform (y.data(), false);
+    check (std::abs (y[0].real() - [&] { float s = 0; for (auto& v : x) s += v.real(); return s; }()) < 1e-3f, "FFT bin 0 is the sum");
+    f.perform (y.data(), true);
+    float ferr = 0.0f;
+    for (int i = 0; i < 256; ++i) ferr = std::max (ferr, std::abs (y[(size_t) i] - x[(size_t) i]));
+    check (ferr < 1e-4f, "FFT forward and inverse give the input back");
+
+    const int L = SpectralRatchet::latency;
+    auto delayedError = [&] (const std::vector<float>& out, const std::vector<float>& in, size_t from) {
+        double e = 0.0;
+        for (size_t i = from; i < out.size(); ++i) e = std::max (e, (double) std::abs (out[i] - in[i - (size_t) L]));
+        return e;
+    };
+
+    // All pass steps: the sound comes through unchanged, 2048 samples late.
+    SpectralRatchet r;
+    r.prepare (sr, 256);
+    SpectralRatchet::Params p;
+    p.pattern = 0u;
+    r.setParams (p);
+    r.reset();
+    auto l = saw (220.0, (size_t) sr), rr = l;
+    const auto in = l;
+    run (r, l, rr, 140.0);
+    check (delayedError (l, in, (size_t) L * 3) < 2.0e-3, "pass steps are transparent apart from the latency");
+
+    // Mix 0: exactly the dry signal, delayed by the same latency.
+    SpectralRatchet d;
+    d.prepare (sr, 256);
+    p.pattern = 0xffffu;
+    p.mix = 0.0f;
+    d.setParams (p);
+    d.reset();
+    auto dl = saw (220.0, (size_t) sr), dr = dl;
+    run (d, dl, dr, 140.0);
+    check (delayedError (dl, in, (size_t) L) < 1.0e-6, "mix 0 is the dry signal delayed by the latency");
+
+    // Freeze holds the sound after the input stops.
+    SpectralRatchet fr;
+    fr.prepare (sr, 256);
+    p = {};
+    p.pattern = 0xffffu;   // every step freezes
+    p.steps = 16;
+    p.division = 2;        // 1/16 at 120 BPM: the pattern is 2 s, one capture at its start
+    p.interval = SpectralRatchet::same;
+    p.smear = 0.0f;
+    fr.setParams (p);
+    fr.reset();
+    auto fl = sine (440.0, (size_t) sr * 2), frr = fl;
+    for (size_t i = (size_t) (sr * 0.5); i < fl.size(); ++i) fl[i] = frr[i] = 0.0f;
+    run (fr, fl, frr, 120.0);
+    check (rms (fl, (size_t) (sr * 1.0), (size_t) (sr * 1.5)) > 0.05, "a frozen spectrum keeps sounding after the input stops");
+    check (std::abs (crossingRate (fl, (size_t) (sr * 1.0), (size_t) (sr * 1.5)) - 440.0) < 15.0, "the frozen sound keeps its pitch");
+    check (allFinite (fl) && allFinite (frr), "freeze output is finite");
+
+    // Octaves up: the second repeat is an octave higher.
+    check (SpectralRatchet::intervalFor (p, 0) == 0, "the first repeat is as captured");
+    p.interval = SpectralRatchet::octaveUp;
+    check (SpectralRatchet::intervalFor (p, 1) == 12 && SpectralRatchet::intervalFor (p, 2) == 24, "octaves up climbs by octaves");
+    p.interval = SpectralRatchet::scaleUp;
+    check (SpectralRatchet::intervalFor (p, 1) == 1, "scale up in phrygian starts with a semitone");
+
+    SpectralRatchet oc;
+    oc.prepare (sr, 256);
+    p = {};
+    p.pattern = 0x0006u;   // steps 2 and 3 freeze
+    p.steps = 4;
+    p.division = 8;        // 1/4 at 120 BPM = 0.5 s per step
+    p.interval = SpectralRatchet::octaveUp;
+    p.smear = 0.0f;
+    oc.setParams (p);
+    oc.reset();
+    auto ol = sine (500.0, (size_t) sr * 2), orr = ol;
+    run (oc, ol, orr, 120.0);
+    // Output is 2048 samples late: step 3 (repeat 1) plays from 1.0 s + latency.
+    const size_t s3 = (size_t) (sr * 1.0) + (size_t) L;
+    check (std::abs (crossingRate (ol, s3 + 4000, s3 + 20000) - 1000.0) < 25.0, "the second repeat is an octave up");
+
+    // Extreme settings stay bounded.
+    SpectralRatchet x2;
+    x2.prepare (sr, 256);
+    p = {};
+    p.pattern = 0xA5A5u; p.steps = 16; p.division = 0; p.interval = SpectralRatchet::randomScale;
+    p.mask = SpectralRatchet::walk; p.smear = 1.0f; p.tilt = 1.0f;
+    x2.setParams (p);
+    x2.reset();
+    auto xl = saw (3000.0, (size_t) sr * 2, 1.0f), xr = xl;
+    run (x2, xl, xr, 180.0, 61);
+    check (allFinite (xl) && allFinite (xr), "spectral ratchet stays bounded at extreme settings");
+}
+
 void modulationTests()
 {
     // LFO 1/4 rate: one cycle per quarter note, locked to the song position.
@@ -738,6 +838,7 @@ int main()
     orbitTests();
     tapeTests();
     sidechainTests();
+    ratchetTests();
     performanceTest();
 
     if (failures == 0) std::printf ("All DSP tests passed.\n");
