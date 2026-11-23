@@ -322,6 +322,26 @@ void OriginPsyProcessor::toggleGateStep (int band, int step)
     gatePatterns[(size_t) band] ^= (1u << step);
 }
 
+void OriginPsyProcessor::swapSlots (int a, int b)
+{
+    if (a == b || a < 0 || b < 0 || a >= Chain::numSlots || b >= Chain::numSlots) return;
+    // Everything that belongs to a slot moves with its module.
+    const std::pair<juce::String, juce::String> pairs[] = {
+        { params::slotModule (a), params::slotModule (b) }, { params::slotBypass (a), params::slotBypass (b) },
+        { params::slotMix (a), params::slotMix (b) },       { params::slotSolo (a), params::slotSolo (b) },
+    };
+    for (const auto& [idA, idB] : pairs)
+    {
+        auto* pa = apvts.getParameter (idA);
+        auto* pb = apvts.getParameter (idB);
+        const float va = pa->getValue(), vb = pb->getValue();
+        pa->beginChangeGesture(); pb->beginChangeGesture();
+        pa->setValueNotifyingHost (vb);
+        pb->setValueNotifyingHost (va);
+        pa->endChangeGesture(); pb->endChangeGesture();
+    }
+}
+
 void OriginPsyProcessor::applyDropPreset()
 {
     for (const auto& target : params::frazaTargets)

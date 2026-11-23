@@ -315,6 +315,29 @@ void modulation()
     check (healthy (run (all, 44100.0, 512, 44100 * 4)), "full modulation matrix stays bounded");
 }
 
+void reorder()
+{
+    OriginPsyProcessor p;
+    setValue (p, params::slotModule (0), (float) ModuleType::vokalAcid);
+    setValue (p, params::slotModule (2), (float) ModuleType::fraktalEcho);
+    setValue (p, params::slotBypass (2), 1.0f);
+    setValue (p, params::slotMix (2), 0.4f);
+    setValue (p, params::slotSolo (0), 1.0f);
+    p.swapSlots (0, 2);
+    check (std::abs (p.apvts.getRawParameterValue (params::slotMix (0))->load() - 0.4f) < 0.01f
+               && p.apvts.getRawParameterValue (params::slotSolo (2))->load() > 0.5f
+               && p.apvts.getRawParameterValue (params::slotSolo (0))->load() < 0.5f,
+           "Dry/Wet and Solo move with the module");
+    check ((int) p.apvts.getRawParameterValue (params::slotModule (0))->load() == (int) ModuleType::fraktalEcho
+               && (int) p.apvts.getRawParameterValue (params::slotModule (2))->load() == (int) ModuleType::vokalAcid,
+           "swapping slots swaps the modules");
+    check (p.apvts.getRawParameterValue (params::slotBypass (0))->load() > 0.5f
+               && p.apvts.getRawParameterValue (params::slotBypass (2))->load() < 0.5f,
+           "the on/off state moves with the module");
+    p.prepareToPlay (48000.0, 256);
+    check (healthy (run (p, 48000.0, 256, 24000)), "a reordered chain plays");
+}
+
 void randomizer()
 {
     OriginPsyProcessor p;
@@ -468,6 +491,7 @@ int main (int argc, char** argv)
     state();
     modulation();
     presets();
+    reorder();
     randomizer();
     latencyAndRatchet();
 

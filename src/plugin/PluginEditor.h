@@ -297,13 +297,20 @@ private:
     juce::Random rng;
 };
 
-class SlotCard : public juce::Component
+class SlotCard : public juce::Component, public juce::DragAndDropTarget
 {
 public:
     SlotCard (OriginPsyProcessor&, int slot, std::function<void (int)> onSelect);
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+
+    // Drag a card onto another to swap the two slots.
+    bool isInterestedInDragSource (const SourceDetails&) override;
+    void itemDragEnter (const SourceDetails&) override { dropHover = true; repaint(); }
+    void itemDragExit (const SourceDetails&) override { dropHover = false; repaint(); }
+    void itemDropped (const SourceDetails&) override;
     int moduleType() const;
     bool selected = false;
 
@@ -317,6 +324,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> moduleAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
+    bool dropHover = false;
 };
 
 } // namespace originpsy::ui

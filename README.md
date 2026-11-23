@@ -4,7 +4,7 @@ An FX plugin (VST3, AU on macOS, and Standalone) with effects built for psytranc
 
 ## How it works
 
-The top row has four **slots**. Pick a module for each one; the sound runs through the slots from left to right. The **ON** button on a slot plays it or skips it. A module plays in one slot only: if you pick it in a second slot, that slot is skipped and the card says so. Clicking a slot opens its module in the middle.
+The top row has four **slots**. Pick a module for each one; the sound runs through the slots from left to right. The **ON** button on a slot plays it or skips it. A module plays in one slot only: if you pick it in a second slot, that slot is skipped and the card says so. Clicking a slot opens its module in the middle. Drag a slot card onto another slot to swap them; the chain fades across the change so nothing clicks.
 
 Each slot also has a small **Dry/Wet** knob (double-click for 100 %) and an **S** (Solo) button: while any slot is soloed, only the soloed slots play. The **LIMIT** button in the header switches on a safety limiter after the output gain (ceiling -0.3 dB by default, automatable as Output Ceiling; no latency). The number under it shows how much it is pulling down.
 
