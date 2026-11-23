@@ -44,6 +44,7 @@ inline const juce::String zapScale = "zap_scale";
 inline const juce::String zapRoot = "zap_root";
 inline const juce::String zapOctave = "zap_octave";
 inline const juce::String zapOrder = "zap_order";
+inline const juce::String zapKey = "zap_key";
 inline const juce::String zapSweep = "zap_sweep";
 inline const juce::String zapSweepTime = "zap_sweep_time";
 inline const juce::String zapDecay = "zap_decay";

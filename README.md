@@ -34,7 +34,7 @@ The left side shows which vowel is playing and which note the plugin hears.
 
 The sound is split into three bands (**Low | Mid** and **Mid | High**), and each band has its own gate rhythm and its own pattern length. With 16, 7 and 13 steps, for example, the rhythms line up again only after many bars, so a single pad becomes a texture that never repeats.
 
-- **Mode**: Euclid (**Hits** spread as evenly as possible over **Steps**, **Rotate** shifts them) or Steps (click the ring to draw steps)
+- **Mode**: Euclid (**Hits** spread as evenly as possible over **Steps**, **Rotate** shifts them), Steps (click the ring to draw steps), or Sidechain (the band ducks each time the sidechain input hits, see [Sidechain](#sidechain))
 - **Rate**: length of one step
 - **Depth**: how far the band is turned down between hits (Low defaults to 0 % so kick and bass stay steady)
 - **Length**: how long the gate stays open within a step; **Attack** and **Release** keep it click-free
@@ -48,6 +48,7 @@ Every hit on the input (hats, percussion, even a kick) fires a short "laser" zap
 - **Sweep**: how far away the zap starts (+ falls onto the note, - rises onto it); **Sweep Time**: how fast it lands
 - **Decay**: how long it rings; **Resonance**: from noisy (the filtered hit) to a pure tone
 - **Mix**: up to 50 % adds the zaps on top, above that the dry sound fades out
+- **Listen to**: Input, or Sidechain (zaps fire on the hits of another track, e.g. the kick)
 
 ### Orbit Doppler
 
@@ -79,9 +80,19 @@ On every freeze step of a 1 to 16 step pattern it holds the spectrum of the soun
 
 A curve that knows where you are in an 8, 16 or 32 bar phrase (it rises through the phrase by default; the dot on the curve shows its value now). The knobs on the right set how far the curve moves each parameter (Echo Mix, Echo Feedback, Echo Damp, Vocal Formant, Vocal Resonance, Gate Depth), so the build-up plays itself with no automation lanes. **Offset** moves the start of the phrase by a few bars. The **DROP** button sets up a ready-made build-up over the last 4 bars of the phrase in one click.
 
+### Sidechain
+
+OriginPsy has an optional stereo sidechain input. In Bitwig, open the plugin's sidechain selector and pick the kick track (in other DAWs: route a send or the kick track to the plugin's sidechain input). The kick can then drive three things:
+
+- **Polymeter Gate**: set a band's Mode to **Sidechain** and that band ducks on every kick. **Depth** sets how far, **Attack** how fast it ducks and **Release** how fast it comes back. Sidechain only the Low band for classic kick and bass ducking, or all three for pumping.
+- **Zap Resonator**: **Listen to: Sidechain** fires a zap on every kick, whatever is playing on the track itself.
+- **SC** in the MOD row follows the sidechain level, so the kick can move any knob (drag it onto Echo Mix with direction Down to duck the echoes, for example).
+
+With no sidechain connected, Sidechain gate bands stay open, the Zap listens to its own input, and SC stays at 0. The gate ring and the Zap page say when no sidechain is coming in.
+
 ### Modulation
 
-The **MOD** row holds the sources: **LFO 1** and **LFO 2** (synced to the song, rate from 1/16 to 16 bars, sine, triangle, saw up, saw down, square or random), **ENV** (follows the input level), the macros **M1** to **M4**, and **PHRASE** (the phrase curve). Each chip shows its live value.
+The **MOD** row holds the sources: **LFO 1** and **LFO 2** (synced to the song, rate from 1/16 to 16 bars, sine, triangle, saw up, saw down, square or random), **ENV** (follows the input level), **SC** (follows the sidechain level), the macros **M1** to **M4**, and **PHRASE** (the phrase curve). Each chip shows its live value.
 
 - Drag a source onto any knob to connect it. A coloured ring around the knob shows how far it moves, and a white dot shows where the parameter really is right now.
 - Shift-drag the knob to set the depth of its newest connection. Right-click it to choose the direction: **Up** or **Down** (one way from where the knob is) or **Both ways** (swings around the knob). LFOs start as Both ways, the other sources as Up.

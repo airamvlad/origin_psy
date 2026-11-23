@@ -115,6 +115,7 @@ juce::Colour originpsy::ui::sourceColour (ModSource s)
         case ModSource::macro3:
         case ModSource::macro4:   return juce::Colour (0xffffe066);
         case ModSource::fraza:    return colours::cyan;
+        case ModSource::sidechain: return juce::Colour (0xffff7a59);
         case ModSource::none:     break;
     }
     return colours::dim;
@@ -527,6 +528,7 @@ ZapPage::ZapPage (OriginPsyProcessor& p)
       scale (p.apvts, params::zapScale, "Scale"),
       root (p.apvts, params::zapRoot, "Root"),
       order (p.apvts, params::zapOrder, "Note order"),
+      key (p.apvts, params::zapKey, "Listen to"),
       threshold (p.apvts, params::zapThreshold, "Threshold", colours::lime),
       octave (p.apvts, params::zapOctave, "Octave", colours::lime),
       sweep (p.apvts, params::zapSweep, "Sweep", colours::lime),
@@ -536,7 +538,7 @@ ZapPage::ZapPage (OriginPsyProcessor& p)
       width (p.apvts, params::zapWidth, "Width", colours::lime),
       mix (p.apvts, params::zapMix, "Mix", colours::lime)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &scale, &root, &order, &threshold, &octave, &sweep,
+    for (auto* c : std::initializer_list<juce::Component*> { &scale, &root, &order, &key, &threshold, &octave, &sweep,
                                                              &sweepTime, &decay, &resonance, &width, &mix })
         addAndMakeVisible (c);
 }
@@ -545,6 +547,14 @@ void ZapPage::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     drawPanel (g, r, colours::lime, "ZAP RESONATOR");
+    if ((int) proc.apvts.getRawParameterValue (params::zapKey)->load() == 1)
+    {
+        const bool connected = proc.meters.sidechainConnected.load();
+        g.setColour (connected ? colours::lime : colours::amber);
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawText (connected ? "listening to the sidechain" : "no sidechain: listening to the input",
+                    r.withWidth (560.0f).reduced (24.0f, 8.0f).removeFromTop (14.0f), juce::Justification::centredRight);
+    }
 
     auto value = [this] (const juce::String& id) { return proc.apvts.getRawParameterValue (id)->load(); };
     ZapResonator::Params zp;
@@ -602,10 +612,11 @@ void ZapPage::resized()
 {
     auto r = getLocalBounds().withTrimmedLeft (576).reduced (12, 30);
     auto top = r.removeFromTop (46);
-    const int cw = top.getWidth() / 3;
+    const int cw = top.getWidth() / 4;
     scale.setBounds (top.removeFromLeft (cw).reduced (4, 0));
     root.setBounds (top.removeFromLeft (cw).reduced (4, 0));
-    order.setBounds (top.reduced (4, 0));
+    order.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    key.setBounds (top.reduced (4, 0));
     r.removeFromTop (8);
     const int kw = r.getWidth() / 4, kh = r.getHeight() / 2;
     juce::Component* knobs[] = { &threshold, &octave, &sweep, &sweepTime, &decay, &resonance, &width, &mix };
@@ -890,7 +901,31 @@ void GateRing::paint (juce::Graphics& g)
 
     PolimetarGate::Band b;
     auto& s = proc.apvts;
-    b.euclidMode = s.getRawParameterValue (params::gateBand (band, "mode"))->load() > 0.5f;
+    const int mode = (int) s.getRawParameterValue (params::gateBand (band, "mode"))->load();
+    if (mode == 2)
+    {
+        // Sidechain mode: the ring fills with the key level, the hole shows how deep it ducks.
+        const float key = proc.meters.source[(size_t) ModSource::sidechain].load();
+        const float depth = s.getRawParameterValue (params::gateBand (band, "depth"))->load();
+        juce::Path ringPath;
+        ringPath.addPieSegment (r, 0.0f, juce::MathConstants<float>::twoPi, 0.62f);
+        g.setColour (colours::panelLight);
+        g.fillPath (ringPath);
+        juce::Path level;
+        level.addPieSegment (r, 0.0f, juce::MathConstants<float>::twoPi * juce::jlimit (0.0f, 1.0f, key * depth), 0.62f);
+        g.setColour (colours::amber);
+        g.fillPath (level);
+        g.setColour (proc.meters.sidechainConnected.load() ? colours::text : colours::dim);
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.drawText ("SC", juce::Rectangle<float> (radius, radius).withCentre (centre), juce::Justification::centred);
+        if (! proc.meters.sidechainConnected.load())
+        {
+            g.setFont (juce::FontOptions (10.0f));
+            g.drawText ("no sidechain", getLocalBounds().toFloat().removeFromBottom (12.0f), juce::Justification::centred);
+        }
+        return;
+    }
+    b.euclidMode = mode == 1;
     b.steps = (int) s.getRawParameterValue (params::gateBand (band, "steps"))->load();
     b.hits = (int) s.getRawParameterValue (params::gateBand (band, "hits"))->load();
     b.rotate = (int) s.getRawParameterValue (params::gateBand (band, "rotate"))->load();
@@ -920,7 +955,7 @@ void GateRing::paint (juce::Graphics& g)
 void GateRing::mouseDown (const juce::MouseEvent& e)
 {
     // Drawing steps works in Steps mode; in Euclid mode the ring only shows.
-    if (proc.apvts.getRawParameterValue (params::gateBand (band, "mode"))->load() > 0.5f) return;
+    if ((int) proc.apvts.getRawParameterValue (params::gateBand (band, "mode"))->load() != 0) return;
     const int steps = (int) proc.apvts.getRawParameterValue (params::gateBand (band, "steps"))->load();
     const auto d = e.position - getLocalBounds().toFloat().getCentre();
     float angle = std::atan2 (d.x, -d.y);
@@ -1109,7 +1144,9 @@ ModStrip::ModStrip (OriginPsyProcessor& p) : proc (p)
     for (int s = 1; s < numModSources; ++s)
     {
         chips.push_back (std::make_unique<SourceChip> (p, (ModSource) s));
-        chips.back()->setTooltip (juce::String ("Drag ") + modSourceName ((ModSource) s) + " onto a knob");
+        chips.back()->setTooltip ((ModSource) s == ModSource::sidechain
+                                      ? juce::String ("Drag SC (level of the sidechain input, e.g. the kick) onto a knob")
+                                      : juce::String ("Drag ") + modSourceName ((ModSource) s) + " onto a knob");
         addAndMakeVisible (*chips.back());
     }
     for (int i = 0; i < 2; ++i)
@@ -1141,12 +1178,14 @@ void ModStrip::resized()
     {
         chip (i == 0 ? ModSource::lfo1 : ModSource::lfo2).setBounds (r.removeFromLeft (64).withTrimmedTop (8));
         r.removeFromLeft (6);
-        lfoControls[(size_t) i * 2]->setBounds (r.removeFromLeft (78));
+        lfoControls[(size_t) i * 2]->setBounds (r.removeFromLeft (72));
         r.removeFromLeft (4);
-        lfoControls[(size_t) i * 2 + 1]->setBounds (r.removeFromLeft (88));
+        lfoControls[(size_t) i * 2 + 1]->setBounds (r.removeFromLeft (82));
         r.removeFromLeft (16);
     }
-    chip (ModSource::envelope).setBounds (r.removeFromLeft (64).withTrimmedTop (8));
+    chip (ModSource::envelope).setBounds (r.removeFromLeft (56).withTrimmedTop (8));
+    r.removeFromLeft (8);
+    chip (ModSource::sidechain).setBounds (r.removeFromLeft (56).withTrimmedTop (8));
     r.removeFromLeft (16);
 
     chip (ModSource::fraza).setBounds (r.removeFromRight (76).withTrimmedTop (8));

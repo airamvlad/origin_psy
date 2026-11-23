@@ -36,6 +36,7 @@ public:
     struct Band
     {
         bool euclidMode = true;
+        bool sidechain = false;  // ducks when the sidechain key hits instead of following the steps
         int steps = 16;          // 1..32
         int hits = 5;            // euclid mode
         int rotate = 0;
@@ -64,6 +65,8 @@ public:
     void prepare (double sampleRate, int /*maxBlock*/)
     {
         sr = sampleRate;
+        keyAttack = (float) std::exp (-1.0 / (0.0005 * sr));
+        keyRelease = (float) std::exp (-1.0 / (0.06 * sr));
         mixSmooth.prepare (sr, 0.02);
         reset();
     }
@@ -72,6 +75,7 @@ public:
     {
         for (auto& s : split) s.reset();
         for (auto& g : env) g = 1.0f;
+        keyLevel = 0.0f;
         mixSmooth.reset (params.mix);
         configured = false;
     }
@@ -102,7 +106,17 @@ public:
         return (activeMask (b) & (1u << step)) != 0 && within < std::clamp (b.length, 0.05f, 1.0f);
     }
 
-    void process (float* left, float* right, int numSamples, const Transport& t) noexcept
+    /** How hard the sidechain key hits, 0..1: -36 dBFS and below is 0,
+        -6 dBFS and above ducks fully. */
+    static float keyAmount (float level) noexcept
+    {
+        if (level <= 1.0e-5f) return 0.0f;
+        return std::clamp ((20.0f * std::log10 (level) + 36.0f) / 30.0f, 0.0f, 1.0f);
+    }
+
+    /** `key` is the mono sidechain signal, or nullptr when there is none
+        (bands in sidechain mode then stay open). */
+    void process (float* left, float* right, int numSamples, const Transport& t, const float* key = nullptr) noexcept
     {
         if (! configured || std::abs (params.lowHz - lastLow) > 0.01f || std::abs (params.highHz - lastHigh) > 0.01f)
         {
@@ -126,6 +140,9 @@ public:
         for (int n = 0; n < numSamples; ++n)
         {
             const double ppq = t.ppqAtBlockStart + n * beatsPerSample;
+            const float k = key != nullptr ? std::abs (key[n]) : 0.0f;
+            keyLevel = sanitize (k + (k > keyLevel ? keyAttack : keyRelease) * (keyLevel - k));
+            const float duck = keyAmount (keyLevel);
             float bandsL[numBands], bandsR[numBands];
             split[0].process (left[n], bandsL[0], bandsL[1], bandsL[2]);
             split[1].process (right[n], bandsR[0], bandsR[1], bandsR[2]);
@@ -133,12 +150,24 @@ public:
             float outL = 0.0f, outR = 0.0f;
             for (int b = 0; b < numBands; ++b)
             {
-                int step = 0;
-                const bool open = isOpen (params.bands[(size_t) b], ppq, &step);
-                if (n == 0) currentStep[(size_t) b].store (step, std::memory_order_relaxed);
-                const float target = open ? 1.0f : floorGain[(size_t) b];
+                const auto& band = params.bands[(size_t) b];
+                float target = 1.0f;
+                if (band.sidechain)
+                {
+                    target = 1.0f - (1.0f - floorGain[(size_t) b]) * duck;
+                    if (n == 0) currentStep[(size_t) b].store (-1, std::memory_order_relaxed);
+                }
+                else
+                {
+                    int step = 0;
+                    const bool open = isOpen (band, ppq, &step);
+                    if (n == 0) currentStep[(size_t) b].store (step, std::memory_order_relaxed);
+                    target = open ? 1.0f : floorGain[(size_t) b];
+                }
                 auto& e = env[(size_t) b];
-                const float c = target > e ? att[(size_t) b] : rel[(size_t) b];
+                // Gate: attack opens, release closes. Ducker: attack ducks, release recovers.
+                const bool rising = target > e;
+                const float c = (rising != band.sidechain) ? att[(size_t) b] : rel[(size_t) b];
                 e = target + c * (e - target);
                 outL += bandsL[b] * e;
                 outR += bandsR[b] * e;
@@ -161,6 +190,7 @@ private:
     std::array<std::atomic<int>, numBands> currentStep { { -1, -1, -1 } };
     Smoother mixSmooth;
     float lastLow = 0.0f, lastHigh = 0.0f;
+    float keyAttack = 0.0f, keyRelease = 0.0f, keyLevel = 0.0f;
     bool configured = false;
 };
 
