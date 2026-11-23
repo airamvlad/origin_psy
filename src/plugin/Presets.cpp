@@ -176,6 +176,16 @@ const std::vector<PresetManager::Factory>& PresetManager::factoryPresets()
               connect (p, ModSource::fraza, params::gateBand (2, "length"), -0.4f);
           } },
 
+        { "Tape Drop 8", "Build-up", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::fraktalEcho, ModuleType::tapeStop, ModuleType::empty);
+              set (p, params::tapeMode, 0.0f);        // stop
+              set (p, params::tapeTrigger, 3.0f);     // every 8 bars
+              set (p, params::tapeLength, 4.0f);      // 1 bar
+              set (p, params::tapeCurve, 0.65f);
+              set (p, params::echoMix, 0.2f);
+              macros (p);
+          } },
+
         { "Long Rise 32", "Build-up", [] (OriginPsyProcessor& p) {
               slots (p, ModuleType::polimetarGate, ModuleType::fraktalEcho, ModuleType::empty);
               set (p, params::frazaBars, 2.0f);       // 32 bars

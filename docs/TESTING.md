@@ -55,6 +55,15 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] Fly-by: passes in front from left to right and back; Spiral: swings in close and out
 - [ ] No clicks when changing Path or One lap while playing
 
+## Tape Stop
+
+- [ ] Hold BRAKE: the sound slows down to a stop over the Length; let go: it is back at once (Stop) or spins up (Stop & Start)
+- [ ] Slow Down: holds an octave lower while BRAKE is held, then speeds back up
+- [ ] Trigger Every 4 bars: the stop ends exactly on the bar line and the next bar starts clean
+- [ ] Start with Every 4 bars: each 4 bar block starts with a spin-up
+- [ ] Automating Tape Brake in Bitwig works like holding the button
+- [ ] No clicks going in or out
+
 ## Modulation
 
 - [ ] Drag LFO 1 onto Echo Feedback: a blue ring appears and the white dot moves with the LFO in time with the song

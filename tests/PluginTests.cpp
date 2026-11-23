@@ -66,7 +66,7 @@ void parameters()
 {
     OriginPsyProcessor p;
     const auto& all = p.getParameters();
-    check (all.size() >= 103, "all module parameters are exposed to the host");
+    check (all.size() >= 109, "all module parameters are exposed to the host");
     juce::StringArray ids;
     for (auto* prm : all)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
@@ -136,10 +136,13 @@ void allModulesAndFraza()
     setValue (o, params::orbitRadius, 30.0f);
     setValue (o, params::orbitDoppler, 1.0f);
     setValue (o, params::orbitRate, 0.0f);
+    setValue (o, params::slotModule (3), (float) ModuleType::tapeStop);
+    setValue (o, params::tapeTrigger, 1.0f); // every 2 bars
+    setValue (o, params::tapeMode, 1.0f);    // stop & start
     for (double rate : { 44100.0, 96000.0 })
     {
         o.prepareToPlay (rate, 512);
-        check (healthy (run (o, rate, 512, (int) rate * 3)), "Orbit Doppler and Zap Resonator stay bounded");
+        check (healthy (run (o, rate, 512, (int) rate * 3)), "Orbit Doppler, Zap Resonator and Tape Stop stay bounded");
     }
 }
 

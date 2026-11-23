@@ -1,6 +1,6 @@
 # OriginPsy
 
-An FX plugin (VST3, AU on macOS, and Standalone) with effects built for psytrance that you won't find as ready-made plugins. It has five modules plus Phrase, a modulation source tied to the phrase.
+An FX plugin (VST3, AU on macOS, and Standalone) with effects built for psytrance that you won't find as ready-made plugins. It has six modules plus Phrase, a modulation source tied to the phrase.
 
 ## How it works
 
@@ -55,6 +55,14 @@ The sound circles the listener along a path (Circle, Figure 8, Spiral, Fly-by), 
 - **Doppler**: 0 = no pitch change, 50 % = real speed of sound, 100 % = twice as strong
 - **Distance Tone**: how much darker it gets far away; **Width**: how far left and right it goes
 
+### Tape Stop
+
+Slows the sound down like a tape machine losing power (tempo and pitch fall together), or spins it up from a stop.
+
+- **Mode**: Stop (slows to a halt, comes back at once), Stop & Start (slows down, then spins back up), Slow Down (drops to half speed and back), Start (cuts to a stop and spins up)
+- **Trigger**: hold the **BRAKE** button (or automate Tape Brake in the DAW), or let it fire by itself every 2, 4, 8 or 16 bars: the slow down ends exactly on the bar line, and Start spins up right after it
+- **Length**: how long the slow down takes (1/16 to 2 bars); **Curve**: falls early and lingers (low) or holds speed and drops late (high)
+
 ### Phrase
 
 A curve that knows where you are in an 8, 16 or 32 bar phrase (it rises through the phrase by default; the dot on the curve shows its value now). The knobs on the right set how far the curve moves each parameter (Echo Mix, Echo Feedback, Echo Damp, Vocal Formant, Vocal Resonance, Gate Depth), so the build-up plays itself with no automation lanes. **Offset** moves the start of the phrase by a few bars. The **DROP** button sets up a ready-made build-up over the last 4 bars of the phrase in one click.
@@ -93,10 +101,10 @@ The plugin's vendor is **AMV**, so DAWs list it next to AMVSynth and AMVScope.
 - `originpsy_dsp_tests`: the JUCE-free DSP core (echo timing, pitch tracker, LFOs, modulation matrix, envelope follower, Euclidean rhythms, polymeter, Phrase, null tests, stability at extreme settings, CPU)
 - `originpsy_plugin_tests`: the whole plugin without a DAW (44.1 to 192 kHz, various block sizes, saving state, Drop, modulation, loading every factory preset, saving and loading a user preset)
 - pluginval at strictness level 5 in GitHub Actions (Windows)
-- `originpsy_plugin_tests --screenshot shot.png 1` renders the editor (1 = Echo, 2 = Vocal, 3 = Gate, 4 = Zap, 5 = Orbit)
+- `originpsy_plugin_tests --screenshot shot.png 1` renders the editor (1 = Echo, 2 = Vocal, 3 = Gate, 4 = Zap, 5 = Orbit, 6 = Tape)
 
 The checklist for manual testing in Bitwig is in [docs/TESTING.md](docs/TESTING.md).
 
 ## Roadmap
 
-The full plan with all six modules is in [docs/PLAN.md](docs/PLAN.md). Next up: a tape stop / tape start effect, then Spectral Ratchet.
+The full plan with all six modules is in [docs/PLAN.md](docs/PLAN.md). Next up: Spectral Ratchet.

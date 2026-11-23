@@ -245,6 +245,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         layout.add (std::move (g));
     }
 
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("tape", "Tape Stop", " | ");
+        juce::StringArray lengthNames;
+        for (const auto& l : TapeStop::lengths) lengthNames.add (l.name);
+        g->addChild (choice (tapeMode, "Tape Mode", { "Stop", "Stop & Start", "Slow Down", "Start" }, 0));
+        g->addChild (choice (tapeTrigger, "Tape Trigger", { "Brake button", "Every 2 bars", "Every 4 bars", "Every 8 bars", "Every 16 bars" }, 0));
+        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { tapeBrake, 1 }, "Tape Brake", false));
+        g->addChild (choice (tapeLength, "Tape Length", lengthNames, 3));
+        g->addChild (percent (tapeCurve, "Tape Curve", 0.5f));
+        g->addChild (percent (tapeMix, "Tape Mix", 1.0f));
+        layout.add (std::move (g));
+    }
+
     return layout;
 }
 
