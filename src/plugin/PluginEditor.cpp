@@ -139,16 +139,28 @@ void ModSlider::mouseDown (const juce::MouseEvent& e)
         {
             const auto slot = p->matrix.get (i);
             const juce::String name = modSourceName (slot.source);
-            const juce::String depth = (slot.depth > 0 ? "+" : "") + juce::String (juce::roundToInt (slot.depth * 100.0f)) + " %";
+            const juce::String depth = juce::String (juce::roundToInt (std::abs (slot.depth) * 100.0f)) + " %";
             menu.addSectionHeader (name + "  " + depth);
-            menu.addItem (1000 + i, "Invert " + name);
-            menu.addItem (2000 + i, "Remove " + name);
+            const bool down = slot.depth < 0.0f;
+            menu.addItem (1000 + i * 10, "Up", true, ! slot.bipolar && ! down);
+            menu.addItem (1001 + i * 10, "Down", true, ! slot.bipolar && down);
+            menu.addItem (1002 + i * 10, "Both ways", true, slot.bipolar && ! down);
+            menu.addItem (1003 + i * 10, "Both ways, inverted", true, slot.bipolar && down);
+            menu.addItem (1004 + i * 10, "Remove " + name);
         }
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
                             [p, safe = juce::Component::SafePointer<ModSlider> (this)] (int result) {
-                                if (result >= 2000) p->matrix.clear (result - 2000);
-                                else if (result >= 1000)
-                                    p->matrix.setDepth (result - 1000, -p->matrix.get (result - 1000).depth);
+                                if (result < 1000) return;
+                                const int i = (result - 1000) / 10, action = (result - 1000) % 10;
+                                const float amount = std::max (0.01f, std::abs (p->matrix.get (i).depth));
+                                switch (action)
+                                {
+                                    case 0: p->matrix.setBipolar (i, false); p->matrix.setDepth (i, amount); break;
+                                    case 1: p->matrix.setBipolar (i, false); p->matrix.setDepth (i, -amount); break;
+                                    case 2: p->matrix.setBipolar (i, true); p->matrix.setDepth (i, amount); break;
+                                    case 3: p->matrix.setBipolar (i, true); p->matrix.setDepth (i, -amount); break;
+                                    default: p->matrix.clear (i); break;
+                                }
                                 if (safe != nullptr && safe->getParentComponent() != nullptr)
                                     safe->getParentComponent()->repaint();
                             });
@@ -278,8 +290,8 @@ void Knob::paintOverChildren (juce::Graphics& g)
         const auto slot = p->matrix.get (i);
         if (! slot.used() || slot.destination != idx) continue;
         any = true;
-        const float lo = isBipolar (slot.source) ? base - std::abs (slot.depth) : std::min (base, base + slot.depth);
-        const float hi = isBipolar (slot.source) ? base + std::abs (slot.depth) : std::max (base, base + slot.depth);
+        const float lo = slot.bipolar ? base - std::abs (slot.depth) : std::min (base, base + slot.depth);
+        const float hi = slot.bipolar ? base + std::abs (slot.depth) : std::max (base, base + slot.depth);
         const float r = radius + 1.5f + 3.0f * (float) ring++;
         juce::Path arc;
         arc.addCentredArc (centre.x, centre.y, r, r, 0.0f, angleOf (lo), angleOf (hi), true);
@@ -668,6 +680,11 @@ void PhraseView::paint (juce::Graphics& g)
     const float x = r.getX() + r.getWidth() * (float) proc.meters.frazaPosition.load();
     g.setColour (colours::text.withAlpha (0.8f));
     g.drawVerticalLine ((int) x, r.getY(), r.getBottom());
+    // Where the curve is now: this is the value the PHRASE source sends.
+    const float now = proc.meters.frazaValue.load();
+    const float y = r.getBottom() - 12.0f - now * (r.getHeight() - 14.0f);
+    g.setColour (colours::cyan);
+    g.fillEllipse (juce::Rectangle<float> (9.0f, 9.0f).withCentre ({ x, y }));
     const float bar = (float) proc.meters.frazaPosition.load() * (float) fp.bars + 1.0f;
     g.setFont (juce::FontOptions (11.0f));
     g.drawText ("bar " + juce::String ((int) bar) + " / " + juce::String (fp.bars), r.withHeight (14.0f),
@@ -749,7 +766,7 @@ void ModStrip::paint (juce::Graphics& g)
     drawPanel (g, getLocalBounds().toFloat(), colours::text, "MOD");
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (11.5f));
-    g.drawText ("Drag a source onto a knob. Shift-drag the knob to set depth, right-click it to invert or remove.",
+    g.drawText ("Drag a source onto a knob. Shift-drag the knob to set depth, right-click it for direction or to remove.",
                 getLocalBounds().reduced (12, 6).removeFromTop (18), juce::Justification::topRight);
 }
 

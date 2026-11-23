@@ -365,6 +365,26 @@ void modulationTests()
     m.clearAll();
     check (! m.get (0).used() && near (m.offsetFor (3, values), 0.0, 1e-9), "clear all removes every connection");
 
+    // Direction: LFOs start bipolar, the other sources one way.
+    ModMatrix d;
+    const int lfoSlot = d.connect (ModSource::lfo1, 1, 0.5f);
+    const int envSlot = d.connect (ModSource::envelope, 2, 0.5f);
+    check (d.get (lfoSlot).bipolar && ! d.get (envSlot).bipolar, "LFOs start bipolar, other sources one way");
+    std::array<float, numModSources> v {};
+    v[(size_t) ModSource::lfo1] = -1.0f;
+    v[(size_t) ModSource::envelope] = 0.0f;
+    check (near (d.offsetFor (1, v), -0.5, 1e-6), "bipolar LFO swings below the knob");
+    d.setBipolar (lfoSlot, false);
+    check (near (d.offsetFor (1, v), 0.0, 1e-6), "one-way LFO stays at the knob at its low point");
+    v[(size_t) ModSource::lfo1] = 1.0f;
+    check (near (d.offsetFor (1, v), 0.5, 1e-6), "one-way LFO reaches the full depth at its high point");
+    d.setBipolar (envSlot, true);
+    check (near (d.offsetFor (2, v), -0.5, 1e-6), "bipolar envelope swings below the knob when quiet");
+    d.setDepth (envSlot, -0.5f);
+    d.setBipolar (envSlot, false);
+    v[(size_t) ModSource::envelope] = 1.0f;
+    check (near (d.offsetFor (2, v), -0.5, 1e-6), "one-way down goes below the knob");
+
     EnvelopeFollower env;
     env.prepare (sr);
     std::vector<float> loud ((size_t) sr / 10, 1.0f), quiet ((size_t) sr, 0.0f);

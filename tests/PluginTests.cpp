@@ -179,6 +179,30 @@ void modulation()
                && std::abs (slot.depth - 1.0f) < 1e-6f,
            "state restores the modulation matrix");
 
+    // Direction is saved too.
+    OriginPsyProcessor dir;
+    dir.matrix.clearAll();
+    const int ds = dir.matrix.connect (ModSource::lfo2, dir.modulatableIndex (params::echoDamp), -0.3f);
+    dir.matrix.setBipolar (ds, false);
+    juce::MemoryBlock dirData;
+    dir.getStateInformation (dirData);
+    OriginPsyProcessor dir2;
+    dir2.setStateInformation (dirData.getData(), (int) dirData.getSize());
+    check (! dir2.matrix.get (0).bipolar && dir2.matrix.get (0).source == ModSource::lfo2, "state restores the direction");
+
+    // PHRASE as a source: the default curve rises through the phrase.
+    OriginPsyProcessor ph;
+    ph.matrix.clearAll();
+    setValue (ph, params::frazaBars, 0.0f); // 8 bars = 13.7 s at 140 BPM
+    setValue (ph, params::echoMix, 0.0f);
+    const int phIdx = ph.modulatableIndex (params::echoMix);
+    ph.matrix.connect (ModSource::fraza, phIdx, 1.0f);
+    ph.prepareToPlay (48000.0, 512);
+    run (ph, 48000.0, 512, 48000 * 7);
+    const float phraseNow = ph.meters.frazaValue.load();
+    check (phraseNow > 0.4f && phraseNow < 0.6f, "half way through the phrase the curve is at half");
+    check (std::abs (ph.modulatedNormalised (phIdx) - phraseNow) < 0.02f, "PHRASE moves the knob it is dropped on");
+
     // Every modulatable parameter at once, with every source, stays bounded.
     OriginPsyProcessor all;
     all.applyDropPreset();

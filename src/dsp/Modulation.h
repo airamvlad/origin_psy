@@ -120,6 +120,7 @@ public:
         ModSource source = ModSource::none;
         int destination = -1;   // index into the processor's list of modulatable parameters
         float depth = 0.0f;
+        bool bipolar = false;   // true: swings both ways around the knob; false: one way (sign of depth)
         bool used() const noexcept { return source != ModSource::none && destination >= 0; }
     };
 
@@ -127,13 +128,14 @@ public:
     {
         const auto& s = slots[(size_t) i];
         return { (ModSource) s.source.load (std::memory_order_relaxed), s.destination.load (std::memory_order_relaxed),
-                 s.depth.load (std::memory_order_relaxed) };
+                 s.depth.load (std::memory_order_relaxed), s.bipolar.load (std::memory_order_relaxed) };
     }
 
     void set (int i, const Slot& v) noexcept
     {
         auto& s = slots[(size_t) i];
         s.depth.store (std::clamp (v.depth, -1.0f, 1.0f), std::memory_order_relaxed);
+        s.bipolar.store (v.bipolar, std::memory_order_relaxed);
         s.destination.store (v.destination, std::memory_order_relaxed);
         s.source.store ((int) v.source, std::memory_order_relaxed);
     }
@@ -143,10 +145,13 @@ public:
         slots[(size_t) i].depth.store (std::clamp (depth, -1.0f, 1.0f), std::memory_order_relaxed);
     }
 
+    void setBipolar (int i, bool bipolar) noexcept { slots[(size_t) i].bipolar.store (bipolar, std::memory_order_relaxed); }
+
     void clear (int i) noexcept { set (i, {}); }
     void clearAll() noexcept { for (int i = 0; i < numSlots; ++i) clear (i); }
 
     /** Adds a connection, or returns the existing one for the same pair.
+        LFOs start bipolar, the other sources one way (up for a positive depth).
         Returns the slot index, or -1 when all slots are used. */
     int connect (ModSource source, int destination, float depth) noexcept
     {
@@ -158,10 +163,17 @@ public:
         for (int i = 0; i < numSlots; ++i)
             if (! get (i).used())
             {
-                set (i, { source, destination, depth });
+                set (i, { source, destination, depth, isBipolar (source) });
                 return i;
             }
         return -1;
+    }
+
+    /** A source value as a connection uses it: -1..1 when bipolar, 0..1 when not. */
+    static float shaped (ModSource source, float value, bool bipolar) noexcept
+    {
+        if (bipolar == isBipolar (source)) return value;
+        return bipolar ? 2.0f * value - 1.0f : 0.5f * (value + 1.0f);
     }
 
     /** Sum of depth x source value for one destination. */
@@ -172,7 +184,7 @@ public:
         {
             const auto s = get (i);
             if (s.used() && s.destination == destination)
-                sum += s.depth * sourceValues[(size_t) s.source];
+                sum += s.depth * shaped (s.source, sourceValues[(size_t) s.source], s.bipolar);
         }
         return sum;
     }
@@ -183,6 +195,7 @@ private:
         std::atomic<int> source { 0 };
         std::atomic<int> destination { -1 };
         std::atomic<float> depth { 0.0f };
+        std::atomic<bool> bipolar { false };
     };
     std::array<AtomicSlot, numSlots> slots;
 };
