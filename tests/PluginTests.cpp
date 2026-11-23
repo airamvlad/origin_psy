@@ -66,7 +66,7 @@ void parameters()
 {
     OriginPsyProcessor p;
     const auto& all = p.getParameters();
-    check (all.size() >= 118, "all module parameters are exposed to the host");
+    check (all.size() >= 128, "all module parameters are exposed to the host");
     juce::StringArray ids;
     for (auto* prm : all)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (prm))
@@ -111,6 +111,86 @@ void emptyChainIsTransparent()
         err = std::max (err, (double) std::abs (out[i] - v));
     }
     check (err < 1.0e-5, "empty chain with 0 dB output is a null test");
+}
+
+/** Peak of a run after the first half second (filters and smoothers settled). */
+float settledPeak (const std::vector<float>& v)
+{
+    float m = 0.0f;
+    for (size_t i = 24000; i < v.size(); ++i) m = std::max (m, std::abs (v[i]));
+    return m;
+}
+
+void slotMixSoloAndLimiter()
+{
+    // Dry/Wet 0 on every slot turns the full chain into a null test.
+    {
+        OriginPsyProcessor p;
+        p.applyDropPreset();
+        for (int i = 0; i < Chain::numSlots; ++i) setValue (p, params::slotMix (i), 0.0f);
+        p.prepareToPlay (48000.0, 256);
+        const auto out = run (p, 48000.0, 256, 48000);
+        double phase = 0.0, err = 0.0;
+        for (size_t i = 0; i < out.size(); ++i)
+        {
+            const float v = 0.5f * (float) (2.0 * phase - 1.0);
+            phase += 110.0 / 48000.0;
+            phase -= std::floor (phase);
+            if (i > 4800) err = std::max (err, (double) std::abs (out[i] - v));
+        }
+        check (err < 1.0e-4, "slot Dry/Wet at 0 passes the dry signal");
+    }
+
+    // Solo on one slot sounds the same as that slot alone in the chain.
+    {
+        OriginPsyProcessor solo, plain;
+        solo.applyDropPreset();
+        plain.applyDropPreset();
+        int usedSlot = -1;
+        for (int i = 0; i < Chain::numSlots && usedSlot < 0; ++i)
+            if ((int) solo.apvts.getRawParameterValue (params::slotModule (i))->load() != 0) usedSlot = i;
+        check (usedSlot >= 0, "Drop uses a slot");
+        setValue (solo, params::slotSolo (usedSlot), 1.0f);
+        for (int i = 0; i < Chain::numSlots; ++i)
+            if (i != usedSlot) setValue (plain, params::slotModule (i), 0.0f);
+        solo.prepareToPlay (48000.0, 256);
+        plain.prepareToPlay (48000.0, 256);
+        const auto a = run (solo, 48000.0, 256, 48000);
+        const auto b = run (plain, 48000.0, 256, 48000);
+        double err = 0.0;
+        for (size_t i = 0; i < a.size(); ++i) err = std::max (err, (double) std::abs (a[i] - b[i]));
+        check (err < 1.0e-4, "Solo plays only the soloed slot");
+    }
+
+    // Spectral Ratchet at slot Dry/Wet 0: the input, late by the plugin's latency (no comb).
+    {
+        OriginPsyProcessor p;
+        for (int i = 0; i < Chain::numSlots; ++i) setValue (p, params::slotModule (i), 0.0f);
+        setValue (p, params::slotModule (0), (float) ModuleType::spectralRatchet);
+        setValue (p, params::slotMix (0), 0.0f);
+        p.prepareToPlay (48000.0, 256);
+        const auto out = run (p, 48000.0, 256, 48000);
+        const int lat = SpectralRatchet::latency;
+        double phase = 0.0, err = 0.0;
+        std::vector<float> in (out.size());
+        for (auto& v : in) { v = 0.5f * (float) (2.0 * phase - 1.0); phase += 110.0 / 48000.0; phase -= std::floor (phase); }
+        for (size_t i = (size_t) lat + 4800; i < out.size(); ++i) err = std::max (err, (double) std::abs (out[i] - in[i - (size_t) lat]));
+        check (err < 1.0e-3, "Spectral Ratchet at slot Dry/Wet 0 is the delayed input");
+    }
+
+    // The limiter keeps a +12 dB output under the ceiling; off, it passes.
+    for (bool limit : { true, false })
+    {
+        OriginPsyProcessor p;
+        for (int i = 0; i < Chain::numSlots; ++i) setValue (p, params::slotModule (i), 0.0f);
+        setValue (p, params::outGain, 12.0f);
+        setValue (p, params::outLimit, limit ? 1.0f : 0.0f);
+        setValue (p, params::outCeiling, -1.0f);
+        p.prepareToPlay (48000.0, 256);
+        const auto peak = settledPeak (run (p, 48000.0, 256, 48000));
+        if (limit) check (peak <= std::pow (10.0f, -1.0f / 20.0f) + 1.0e-5f, "the limiter holds the ceiling");
+        else check (peak > 1.5f, "with the limiter off the output is not limited");
+    }
 }
 
 void allModulesAndFraza()
@@ -241,7 +321,13 @@ void reorder()
     setValue (p, params::slotModule (0), (float) ModuleType::vokalAcid);
     setValue (p, params::slotModule (2), (float) ModuleType::fraktalEcho);
     setValue (p, params::slotBypass (2), 1.0f);
+    setValue (p, params::slotMix (2), 0.4f);
+    setValue (p, params::slotSolo (0), 1.0f);
     p.swapSlots (0, 2);
+    check (std::abs (p.apvts.getRawParameterValue (params::slotMix (0))->load() - 0.4f) < 0.01f
+               && p.apvts.getRawParameterValue (params::slotSolo (2))->load() > 0.5f
+               && p.apvts.getRawParameterValue (params::slotSolo (0))->load() < 0.5f,
+           "Dry/Wet and Solo move with the module");
     check ((int) p.apvts.getRawParameterValue (params::slotModule (0))->load() == (int) ModuleType::fraktalEcho
                && (int) p.apvts.getRawParameterValue (params::slotModule (2))->load() == (int) ModuleType::vokalAcid,
            "swapping slots swaps the modules");
@@ -419,6 +505,22 @@ void sidechain()
     check (rmsOf (24200, 25500) < 0.05, "a kick on the sidechain ducks the gate");
     check (rmsOf (16000, 23000) > 0.25, "the gate opens between kicks");
     check (scPeak > 0.5f, "the SC modulation source follows the kick");
+
+    // Mono track with a stereo sidechain: the sidechain channels are left alone.
+    OriginPsyProcessor mono;
+    auto monoLayout = mono.getBusesLayout();
+    monoLayout.inputBuses.getReference (0) = juce::AudioChannelSet::mono();
+    monoLayout.outputBuses.getReference (0) = juce::AudioChannelSet::mono();
+    monoLayout.inputBuses.getReference (1) = juce::AudioChannelSet::stereo();
+    check (mono.setBusesLayout (monoLayout), "mono with a stereo sidechain is supported");
+    setValue (mono, params::outGain, 12.0f);
+    mono.prepareToPlay (48000.0, 256);
+    juce::AudioBuffer<float> mb (3, 256);
+    for (int ch = 0; ch < 3; ++ch)
+        for (int i = 0; i < 256; ++i) mb.setSample (ch, i, 0.5f * std::sin ((float) i * 0.1f));
+    const float scBefore = mb.getSample (1, 10);
+    for (int i = 0; i < 20; ++i) mono.processBlock (mb, midi);
+    check (mb.getSample (1, 10) == scBefore, "the sidechain input is not processed as audio");
 }
 
 int screenshot (const juce::String& path, int module)
@@ -450,6 +552,7 @@ int main (int argc, char** argv)
     parameters();
     sampleRatesAndBlocks();
     emptyChainIsTransparent();
+    slotMixSoloAndLimiter();
     allModulesAndFraza();
     state();
     modulation();

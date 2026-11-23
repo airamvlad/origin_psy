@@ -9,6 +9,7 @@
 #include "ZapResonator.h"
 
 #include <array>
+#include <vector>
 
 namespace originpsy
 {
@@ -46,21 +47,26 @@ public:
         std::array<ModuleType, numSlots> slots { ModuleType::vokalAcid, ModuleType::polimetarGate,
                                                  ModuleType::fraktalEcho, ModuleType::empty };
         std::array<bool, numSlots> bypass {};
+        std::array<bool, numSlots> solo {};
 
-        bool operator== (const Layout& o) const noexcept { return slots == o.slots && bypass == o.bypass; }
+        bool operator== (const Layout& o) const noexcept { return slots == o.slots && bypass == o.bypass && solo == o.solo; }
         bool operator!= (const Layout& o) const noexcept { return ! (*this == o); }
 
-        /** The layout with duplicate modules and bypassed slots removed. */
+        /** The layout with duplicate modules and bypassed slots removed. When
+            any slot is soloed, only the soloed slots play. */
         std::array<ModuleType, numSlots> effective() const noexcept
         {
             std::array<ModuleType, numSlots> out {};
             std::array<bool, numModuleTypes> used {};
+            bool anySolo = false;
+            for (int i = 0; i < numSlots; ++i) anySolo = anySolo || (solo[(size_t) i] && slots[(size_t) i] != ModuleType::empty);
             for (int i = 0; i < numSlots; ++i)
             {
                 const auto t = slots[(size_t) i];
                 const int ti = (int) t;
                 if (t == ModuleType::empty || bypass[(size_t) i] || ti < 0 || ti >= numModuleTypes || used[(size_t) ti])
                     continue;
+                if (anySolo && ! solo[(size_t) i]) continue;
                 used[(size_t) ti] = true;
                 out[(size_t) i] = t;
             }
@@ -87,6 +93,9 @@ public:
         tape.prepare (sampleRate, maxBlock);
         ratchet.prepare (sampleRate, maxBlock);
         fadeSamples = std::max (1, (int) (sampleRate * 0.008));
+        blockSize = std::max (1, maxBlock);
+        for (auto& d : dry) d.assign ((size_t) blockSize, 0.0f);
+        for (auto& m : mixSmooth) m.prepare (sampleRate, 0.02);
         reset();
     }
 
@@ -102,7 +111,11 @@ public:
         fadeGain = 1.0f;
         fadingOut = false;
         active = pending;
+        for (int i = 0; i < numSlots; ++i) mixSmooth[(size_t) i].reset (slotMix[(size_t) i]);
     }
+
+    /** Dry/wet of each slot (0..1): how much of the slot's module is heard. */
+    void setSlotMix (int slot, float mix) noexcept { slotMix[(size_t) slot] = std::clamp (mix, 0.0f, 1.0f); }
 
     void setLayout (const Layout& l) noexcept { pending = l; }
 
@@ -118,13 +131,41 @@ public:
     /** `key` is the mono sidechain signal, or nullptr when the host sends none. */
     void process (float* left, float* right, int numSamples, const Transport& t, const float* key = nullptr) noexcept
     {
+        // The slot Dry/Wet needs a copy of the input, so long blocks go in pieces.
+        for (int start = 0; start < numSamples; start += blockSize)
+        {
+            Transport part = t;
+            part.ppqAtBlockStart = t.ppqAtBlockStart + start / t.samplesPerBeat (sr);
+            processPart (left + start, right + start, std::min (blockSize, numSamples - start), part,
+                         key != nullptr ? key + start : nullptr);
+        }
+    }
+
+private:
+    void processPart (float* left, float* right, int numSamples, const Transport& t, const float* key) noexcept
+    {
         if (pending.effective() != active.effective() && ! fadingOut)
             fadingOut = true;
         else if (pending != active && pending.effective() == active.effective())
             active = pending; // nothing audible changes
 
-        for (auto type : active.effective())
+        const auto playing = active.effective();
+        for (int slot = 0; slot < numSlots; ++slot)
         {
+            const auto type = playing[(size_t) slot];
+            if (type == ModuleType::empty) continue;
+            auto& ms = mixSmooth[(size_t) slot];
+            ms.setTarget (slotMix[(size_t) slot]);
+            // Spectral Ratchet is late by its latency, so blending it with the
+            // undelayed input would comb. Its own (latency-matched) mix gets
+            // the slot's Dry/Wet instead, set by the processor.
+            const bool blend = type != ModuleType::spectralRatchet
+                               && (slotMix[(size_t) slot] < 1.0f || ms.current() < 0.9999f);
+            if (blend)
+            {
+                std::copy (left, left + numSamples, dry[0].begin());
+                std::copy (right, right + numSamples, dry[1].begin());
+            }
             switch (type)
             {
                 case ModuleType::fraktalEcho:   echo.process (left, right, numSamples, t); break;
@@ -135,6 +176,19 @@ public:
                 case ModuleType::tapeStop:      tape.process (left, right, numSamples, t); break;
                 case ModuleType::spectralRatchet: ratchet.process (left, right, numSamples, t); break;
                 case ModuleType::empty: break;
+            }
+            if (blend)
+            {
+                for (int n = 0; n < numSamples; ++n)
+                {
+                    const float m = ms.next();
+                    left[n] = dry[0][(size_t) n] * (1.0f - m) + left[n] * m;
+                    right[n] = dry[1][(size_t) n] * (1.0f - m) + right[n] * m;
+                }
+            }
+            else
+            {
+                ms.reset (1.0f);
             }
         }
 
@@ -159,7 +213,6 @@ public:
         }
     }
 
-private:
     void resetModule (ModuleType t)
     {
         switch (t)
@@ -177,7 +230,10 @@ private:
 
     double sr = 48000.0;
     Layout active, pending;
-    int fadeSamples = 384;
+    int fadeSamples = 384, blockSize = 512;
+    std::array<std::vector<float>, 2> dry;
+    std::array<float, numSlots> slotMix { { 1.0f, 1.0f, 1.0f, 1.0f } };
+    std::array<Smoother, numSlots> mixSmooth;
     float fadeGain = 1.0f;
     bool fadingOut = false;
 };

@@ -59,6 +59,7 @@ void OriginPsyProcessor::prepareToPlay (double sr, int samplesPerBlock)
     chain.reset();
     clock.reset();
     outGain.reset (sr, 0.02);
+    limiter.prepare (sr);
     outGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (value (params::outGain)));
     wantedLatency = Chain::latencyOf (chain.activeLayout());
     setLatencySamples (wantedLatency.load());
@@ -133,6 +134,8 @@ void OriginPsyProcessor::updateModules()
     {
         layout.slots[(size_t) i] = (ModuleType) (int) m (params::slotModule (i));
         layout.bypass[(size_t) i] = m (params::slotBypass (i)) > 0.5f;
+        layout.solo[(size_t) i] = value (params::slotSolo (i)) > 0.5f;
+        chain.setSlotMix (i, m (params::slotMix (i)));
     }
     chain.setLayout (layout);
 
@@ -232,6 +235,9 @@ void OriginPsyProcessor::updateModules()
     rp.smear = m (params::ratchetSmear);
     rp.tilt = m (params::ratchetTilt);
     rp.mix = m (params::ratchetMix);
+    for (int i = 0; i < Chain::numSlots; ++i)
+        if ((ModuleType) (int) m (params::slotModule (i)) == ModuleType::spectralRatchet)
+            rp.mix *= m (params::slotMix (i));
     chain.ratchet.setParams (rp);
 
     // Latency follows the layout (Spectral Ratchet adds 2048 samples).
@@ -309,6 +315,18 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             buffer.getWritePointer (ch)[n] *= g;
     }
 
+    if (value (params::outLimit) > 0.5f)
+    {
+        limiter.process (buffer.getWritePointer (0), numMain > 1 ? buffer.getWritePointer (1) : nullptr,
+                         numSamples, value (params::outCeiling));
+        meters.limiterDb = limiter.getReductionDb();
+    }
+    else
+    {
+        limiter.reset();
+        meters.limiterDb = 0.0f;
+    }
+
     meters.vokalNote = chain.vokal.getDetectedNote();
     meters.vokalVowel = chain.vokal.getVowelPosition();
     meters.vokalAccent = chain.vokal.getAccent();
@@ -344,11 +362,15 @@ void OriginPsyProcessor::toggleGateStep (int band, int step)
 void OriginPsyProcessor::swapSlots (int a, int b)
 {
     if (a == b || a < 0 || b < 0 || a >= Chain::numSlots || b >= Chain::numSlots) return;
-    for (const auto& id : { params::slotModule (a), params::slotBypass (a) })
+    // Everything that belongs to a slot moves with its module.
+    const std::pair<juce::String, juce::String> pairs[] = {
+        { params::slotModule (a), params::slotModule (b) }, { params::slotBypass (a), params::slotBypass (b) },
+        { params::slotMix (a), params::slotMix (b) },       { params::slotSolo (a), params::slotSolo (b) },
+    };
+    for (const auto& [idA, idB] : pairs)
     {
-        const auto other = id == params::slotModule (a) ? params::slotModule (b) : params::slotBypass (b);
-        auto* pa = apvts.getParameter (id);
-        auto* pb = apvts.getParameter (other);
+        auto* pa = apvts.getParameter (idA);
+        auto* pb = apvts.getParameter (idB);
         const float va = pa->getValue(), vb = pb->getValue();
         pa->beginChangeGesture(); pb->beginChangeGesture();
         pa->setValueNotifyingHost (vb);

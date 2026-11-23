@@ -52,7 +52,7 @@ juce::StringArray orbitPathNames() { return { "Circle", "Figure 8", "Spiral", "F
 bool isModulatable (const juce::RangedAudioParameter& p)
 {
     const auto& id = p.paramID;
-    if (id == outGain || id.startsWith ("macro") || id.startsWith ("fraza_to_") || id.startsWith ("lfo"))
+    if (id == outGain || id == outCeiling || id.startsWith ("macro") || id.startsWith ("fraza_to_") || id.startsWith ("lfo"))
         return false;
     return dynamic_cast<const juce::AudioParameterFloat*> (&p) != nullptr
         || dynamic_cast<const juce::AudioParameterInt*> (&p) != nullptr;
@@ -126,6 +126,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
     layout.add (flt (outGain, "Output", Range (-24.0f, 12.0f, 0.1f), 0.0f, "dB"));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { outLimit, 1 }, "Output Limiter", true));
+    layout.add (flt (outCeiling, "Output Ceiling", Range (-12.0f, 0.0f, 0.1f), -0.3f, "dB"));
 
     // Chain: Vokal Acid -> Polimetar Gate -> Fraktal Echo by default.
     const int defaults[] = { (int) ModuleType::vokalAcid, (int) ModuleType::polimetarGate,
@@ -137,6 +139,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         group->addChild (choice (slotModule (i), "Slot " + juce::String (i + 1) + " Module", moduleNames(), defaults[i]));
         group->addChild (std::make_unique<juce::AudioParameterBool> (
             juce::ParameterID { slotBypass (i), 1 }, "Slot " + juce::String (i + 1) + " Bypass", false));
+        group->addChild (percent (slotMix (i), "Slot " + juce::String (i + 1) + " Dry/Wet", 1.0f));
+        group->addChild (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { slotSolo (i), 1 }, "Slot " + juce::String (i + 1) + " Solo", false));
         layout.add (std::move (group));
     }
 

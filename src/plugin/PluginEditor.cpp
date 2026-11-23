@@ -1316,6 +1316,20 @@ SlotCard::SlotCard (OriginPsyProcessor& p, int s, std::function<void (int)> sele
         repaint();
     };
     addAndMakeVisible (bypass);
+
+    solo.setClickingTogglesState (true);
+    solo.setTooltip ("Solo: hear only the soloed slots");
+    soloAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, params::slotSolo (s), solo);
+    solo.onClick = [this] { if (auto* parent = getParentComponent()) parent->repaint(); };
+    addAndMakeVisible (solo);
+
+    mix.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    mix.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    mix.setPopupDisplayEnabled (true, true, nullptr);
+    mix.setTooltip ("Dry/Wet of this slot");
+    mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.apvts, params::slotMix (s), mix);
+    mix.setDoubleClickReturnValue (true, 1.0);
+    addAndMakeVisible (mix);
 }
 
 int SlotCard::moduleType() const { return module.getSelectedItemIndex(); }
@@ -1327,6 +1341,8 @@ void SlotCard::paint (juce::Graphics& g)
     const bool bypassed = proc.apvts.getRawParameterValue (params::slotBypass (slot))->load() > 0.5f;
     bypass.setToggleState (! bypassed, juce::dontSendNotification);
     bypass.setColour (juce::ToggleButton::tickColourId, accent);
+    solo.setColour (juce::ToggleButton::tickColourId, colours::amber);
+    mix.setColour (juce::Slider::rotarySliderFillColourId, accent);
 
     g.setColour (selected ? colours::panelLight : colours::panel);
     g.fillRoundedRectangle (r, 8.0f);
@@ -1349,9 +1365,9 @@ void SlotCard::paint (juce::Graphics& g)
             && (int) proc.apvts.getRawParameterValue (params::slotModule (other))->load() == moduleType())
         {
             g.setColour (colours::amber);
-            g.setFont (juce::FontOptions (11.0f));
-            g.drawText ("already in slot " + juce::String (other + 1) + ", this one is skipped",
-                        r.reduced (18.0f, 8.0f).withTrimmedRight (16.0f), juce::Justification::topRight);
+            g.setFont (juce::FontOptions (10.5f));
+            g.drawText ("skipped: also in slot " + juce::String (other + 1),
+                        r.reduced (18.0f, 8.0f).withTrimmedLeft (52.0f).withTrimmedRight (18.0f), juce::Justification::topRight);
             break;
         }
 }
@@ -1360,8 +1376,12 @@ void SlotCard::resized()
 {
     auto r = getLocalBounds().reduced (18, 10);
     r.removeFromTop (18);
-    bypass.setBounds (r.removeFromRight (44).withSizeKeepingCentre (44, 26));
-    r.removeFromRight (8);
+    bypass.setBounds (r.removeFromRight (40).withSizeKeepingCentre (40, 26));
+    r.removeFromRight (3);
+    solo.setBounds (r.removeFromRight (24).withSizeKeepingCentre (24, 26));
+    r.removeFromRight (2);
+    mix.setBounds (r.removeFromRight (32).withSizeKeepingCentre (32, 32));
+    r.removeFromRight (4);
     module.setBounds (r.withSizeKeepingCentre (r.getWidth(), 28));
 }
 
@@ -1415,6 +1435,11 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addAndMakeVisible (modStrip);
     addAndMakeVisible (presetBar);
     addAndMakeVisible (output);
+    limit.setClickingTogglesState (true);
+    limit.setColour (juce::ToggleButton::tickColourId, colours::cyan);
+    limit.setTooltip ("Output limiter: nothing goes over the ceiling (Output Ceiling parameter, -0.3 dB by default)");
+    limitAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, params::outLimit, limit);
+    addAndMakeVisible (limit);
 
     showModule (cards.front()->moduleType() > 0 ? cards.front()->moduleType() : (int) ModuleType::fraktalEcho);
     setResizable (true, true);
@@ -1460,6 +1485,12 @@ void OriginPsyEditor::paint (juce::Graphics& g)
                                + (proc.meters.hostPlaying.load() ? "" : "  (internal clock)");
     g.setFont (juce::FontOptions (11.0f));
     g.drawText (tempo, 160, 20, 136, 20, juce::Justification::left);
+
+    // Limiter gain reduction under its button.
+    const float gr = proc.meters.limiterDb.load();
+    g.setFont (juce::FontOptions (10.0f));
+    g.setColour (gr < -0.05f ? colours::amber : colours::dim);
+    g.drawText (gr < -0.05f ? juce::String (gr, 1) + " dB" : "", 836, 36, 58, 14, juce::Justification::centred);
 }
 
 void OriginPsyEditor::resized()
@@ -1480,8 +1511,9 @@ void OriginPsyEditor::resized()
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
-    place (presetBar, { 300, 14, 568, 30 });
-    place (output, { 880, 4, 144, 48 });
+    place (presetBar, { 300, 14, 528, 30 });
+    place (output, { 900, 4, 124, 48 });
+    place (limit, { 836, 12, 58, 22 });
 }
 
 void OriginPsyEditor::timerCallback()
