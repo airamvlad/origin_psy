@@ -56,8 +56,8 @@ inline constexpr FrazaTarget frazaTargets[] = {
     { "fraza_to_echo_mix",      "Echo Mix",      0.45f },
     { "fraza_to_echo_feedback", "Echo Feedback", 0.40f },
     { "fraza_to_echo_damp",     "Echo Damp",    -0.50f },
-    { "fraza_to_vokal_shift",   "Vokal Shift",   0.35f },
-    { "fraza_to_vokal_res",     "Vokal Res",     0.40f },
+    { "fraza_to_vokal_shift",   "Vocal Shift",   0.35f },
+    { "fraza_to_vokal_res",     "Vocal Res",     0.40f },
     { "fraza_to_gate_depth",    "Gate Depth",    0.60f },
 };
 inline constexpr int numFrazaTargets = (int) (sizeof (frazaTargets) / sizeof (frazaTargets[0]));

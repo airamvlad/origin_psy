@@ -373,7 +373,7 @@ EchoPage::EchoPage (OriginPsyProcessor& p)
 void EchoPage::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    drawPanel (g, r, colours::cyan, "FRAKTAL ECHO");
+    drawPanel (g, r, colours::cyan, "FRACTAL ECHO");
 
     // Tree of echoes: time to the right, pitch up and down.
     auto area = r.withWidth (560.0f).reduced (24.0f, 34.0f).withTrimmedTop (4.0f);
@@ -453,7 +453,7 @@ VokalPage::VokalPage (OriginPsyProcessor& p)
 void VokalPage::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    drawPanel (g, r, colours::magenta, "VOKAL ACID");
+    drawPanel (g, r, colours::magenta, "VOCAL ACID");
 
     // Big vowel and the note it comes from.
     auto display = r.withWidth (250.0f).reduced (16.0f, 34.0f);
@@ -593,7 +593,7 @@ GatePage::GatePage (OriginPsyProcessor& p)
 
 void GatePage::paint (juce::Graphics& g)
 {
-    drawPanel (g, getLocalBounds().toFloat(), colours::amber, "POLIMETAR GATE");
+    drawPanel (g, getLocalBounds().toFloat(), colours::amber, "POLYMETER GATE");
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     const char* names[] = { "LOW", "MID", "HIGH" };
@@ -696,7 +696,7 @@ FrazaStrip::FrazaStrip (OriginPsyProcessor& p)
 
 void FrazaStrip::paint (juce::Graphics& g)
 {
-    drawPanel (g, getLocalBounds().toFloat(), colours::cyan, "FRAZA");
+    drawPanel (g, getLocalBounds().toFloat(), colours::cyan, "PHRASE");
     g.setColour (colours::dim);
     g.setFont (juce::FontOptions (11.5f));
     g.drawText ("How far the curve moves each parameter", 572, 8, 420, 16, juce::Justification::left);

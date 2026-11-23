@@ -23,7 +23,7 @@ inline const char* modSourceName (ModSource s) noexcept
         case ModSource::macro2:   return "M2";
         case ModSource::macro3:   return "M3";
         case ModSource::macro4:   return "M4";
-        case ModSource::fraza:    return "FRAZA";
+        case ModSource::fraza:    return "PHRASE";
         case ModSource::none:     break;
     }
     return "";

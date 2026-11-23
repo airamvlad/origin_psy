@@ -135,7 +135,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     }
 
     {
-        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("echo", "Fraktal Echo", " | ");
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("echo", "Fractal Echo", " | ");
         g->addChild (choice (echoTime, "Echo Time", divisionNames(), 5));
         g->addChild (flt (echoRatio, "Echo Branch Ratio", Range (0.25f, 0.9f, 0.001f), 0.618f));
         g->addChild (integer (echoGenerations, "Echo Generations", 1, 4, 3));
@@ -149,23 +149,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     }
 
     {
-        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("vokal", "Vokal Acid", " | ");
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("vokal", "Vocal Acid", " | ");
         const char* notes[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         const int defaultVowel[] = { 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1 };
         for (int pc = 0; pc < 12; ++pc)
-            g->addChild (choice (vokalVowel (pc), juce::String ("Vokal Vowel ") + notes[pc], vowelNames(), defaultVowel[pc]));
-        g->addChild (flt (vokalGlide, "Vokal Glide", skewed (5.0f, 500.0f, 60.0f), 60.0f, "ms"));
-        g->addChild (flt (vokalShift, "Vokal Formant Shift", Range (-12.0f, 12.0f, 0.01f), 0.0f, "st"));
-        g->addChild (percent (vokalResonance, "Vokal Resonance", 0.5f));
-        g->addChild (percent (vokalAccent, "Vokal Accent", 0.5f));
-        g->addChild (choice (vokalCharacter, "Vokal Character", { "Male", "Female", "Robot" }, 1));
-        g->addChild (percent (vokalDrive, "Vokal Drive", 0.2f));
-        g->addChild (percent (vokalMix, "Vokal Mix", 0.8f));
+            g->addChild (choice (vokalVowel (pc), juce::String ("Vocal Vowel ") + notes[pc], vowelNames(), defaultVowel[pc]));
+        g->addChild (flt (vokalGlide, "Vocal Glide", skewed (5.0f, 500.0f, 60.0f), 60.0f, "ms"));
+        g->addChild (flt (vokalShift, "Vocal Formant Shift", Range (-12.0f, 12.0f, 0.01f), 0.0f, "st"));
+        g->addChild (percent (vokalResonance, "Vocal Resonance", 0.5f));
+        g->addChild (percent (vokalAccent, "Vocal Accent", 0.5f));
+        g->addChild (choice (vokalCharacter, "Vocal Character", { "Male", "Female", "Robot" }, 1));
+        g->addChild (percent (vokalDrive, "Vocal Drive", 0.2f));
+        g->addChild (percent (vokalMix, "Vocal Mix", 0.8f));
         layout.add (std::move (g));
     }
 
     {
-        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("gate", "Polimetar Gate", " | ");
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("gate", "Polymeter Gate", " | ");
         g->addChild (flt (gateLow, "Gate Low | Mid", skewed (40.0f, 1000.0f, 200.0f), 200.0f, "Hz"));
         g->addChild (flt (gateHigh, "Gate Mid | High", skewed (600.0f, 12000.0f, 2500.0f), 2500.0f, "Hz"));
         g->addChild (percent (gateMix, "Gate Mix", 1.0f));
@@ -188,13 +188,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     }
 
     {
-        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("fraza", "Fraza", " | ");
-        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { frazaOn, 1 }, "Fraza On", true));
-        g->addChild (choice (frazaBars, "Fraza Length", { "8 bars", "16 bars", "32 bars" }, 1));
-        g->addChild (integer (frazaOffset, "Fraza Offset", 0, 31, 0));
-        g->addChild (choice (frazaCurve, "Fraza Curve", frazaCurveNames(), Fraza::last4Bars));
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("fraza", "Phrase", " | ");
+        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { frazaOn, 1 }, "Phrase On", true));
+        g->addChild (choice (frazaBars, "Phrase Length", { "8 bars", "16 bars", "32 bars" }, 1));
+        g->addChild (integer (frazaOffset, "Phrase Offset", 0, 31, 0));
+        g->addChild (choice (frazaCurve, "Phrase Curve", frazaCurveNames(), Fraza::last4Bars));
         for (const auto& t : frazaTargets)
-            g->addChild (flt (t.id, juce::String ("Fraza > ") + t.label, Range (-1.0f, 1.0f, 0.001f), 0.0f, "amount"));
+            g->addChild (flt (t.id, juce::String ("Phrase > ") + t.label, Range (-1.0f, 1.0f, 0.001f), 0.0f, "amount"));
         layout.add (std::move (g));
     }
 

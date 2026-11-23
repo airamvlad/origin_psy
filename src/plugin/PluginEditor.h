@@ -186,7 +186,7 @@ public:
 
 private:
     OriginPsyProcessor& proc;
-    juce::ToggleButton on { "Fraza" };
+    juce::ToggleButton on { "Phrase" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> onAttachment;
     Choice bars, curve;
     Knob offset;
