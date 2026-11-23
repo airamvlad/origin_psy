@@ -293,7 +293,8 @@ private:
     originpsy::PresetManager presets;
     std::vector<originpsy::PresetManager::Entry> entries;
     juce::ComboBox box;
-    juce::TextButton prev { "<" }, next { ">" }, save { "Save" };
+    juce::TextButton prev { "<" }, next { ">" }, save { "Save" }, randomize { "Randomize" }, mutate { "Mutate" };
+    juce::Random rng;
 };
 
 class SlotCard : public juce::Component

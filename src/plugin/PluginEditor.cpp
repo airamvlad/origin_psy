@@ -1164,8 +1164,17 @@ void ModStrip::resized()
 //==============================================================================
 PresetBar::PresetBar (OriginPsyProcessor& p) : proc (p), presets (p)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &box, &prev, &next, &save })
+    for (auto* c : std::initializer_list<juce::Component*> { &box, &prev, &next, &save, &randomize, &mutate })
         addAndMakeVisible (c);
+    randomize.setTooltip ("New random settings for the modules in the chain");
+    mutate.setTooltip ("Nudge the settings of the modules in the chain a little");
+    auto roll = [this] (bool mutateOnly) {
+        PresetManager::randomize (proc, mutateOnly, rng);
+        syncName();
+        if (auto* top = getTopLevelComponent()) top->repaint();
+    };
+    randomize.onClick = [roll] { roll (false); };
+    mutate.onClick = [roll] { roll (true); };
     box.setTextWhenNothingSelected ("Init");
     box.onChange = [this] {
         const int id = box.getSelectedId();
@@ -1236,7 +1245,11 @@ void PresetBar::askToSave()
 void PresetBar::resized()
 {
     auto r = getLocalBounds();
-    save.setBounds (r.removeFromRight (60));
+    mutate.setBounds (r.removeFromRight (64));
+    r.removeFromRight (4);
+    randomize.setBounds (r.removeFromRight (82));
+    r.removeFromRight (10);
+    save.setBounds (r.removeFromRight (56));
     r.removeFromRight (6);
     next.setBounds (r.removeFromRight (28));
     r.removeFromRight (4);
@@ -1377,7 +1390,8 @@ void OriginPsyEditor::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (12.0f));
     const juce::String tempo = juce::String (proc.meters.bpm.load(), 1) + " BPM"
                                + (proc.meters.hostPlaying.load() ? "" : "  (internal clock)");
-    g.drawText (tempo, 170, 20, 150, 20, juce::Justification::left);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText (tempo, 160, 20, 136, 20, juce::Justification::left);
 }
 
 void OriginPsyEditor::resized()
@@ -1398,7 +1412,7 @@ void OriginPsyEditor::resized()
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
-    place (presetBar, { 330, 14, 420, 30 });
+    place (presetBar, { 300, 14, 568, 30 });
     place (output, { 880, 4, 144, 48 });
 }
 

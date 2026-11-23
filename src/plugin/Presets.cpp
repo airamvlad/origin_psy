@@ -226,6 +226,78 @@ const std::vector<PresetManager::Factory>& PresetManager::factoryPresets()
     return presets;
 }
 
+void PresetManager::randomize (OriginPsyProcessor& p, bool mutateOnly, juce::Random& rng)
+{
+    // Parameter ID prefix of each module.
+    const std::pair<ModuleType, const char*> prefixes[] = {
+        { ModuleType::fraktalEcho, "echo_" }, { ModuleType::vokalAcid, "vokal_" }, { ModuleType::polimetarGate, "gate_" },
+        { ModuleType::zapResonator, "zap_" }, { ModuleType::orbitDoppler, "orbit_" }, { ModuleType::tapeStop, "tape_" },
+        { ModuleType::spectralRatchet, "ratchet_" },
+    };
+    juce::StringArray active;
+    for (int i = 0; i < 4; ++i)
+    {
+        const auto type = (ModuleType) (int) p.apvts.getRawParameterValue (params::slotModule (i))->load();
+        const bool bypassed = p.apvts.getRawParameterValue (params::slotBypass (i))->load() > 0.5f;
+        if (bypassed) continue;
+        for (const auto& [t, prefix] : prefixes)
+            if (t == type) active.add (prefix);
+    }
+    if (active.isEmpty())
+        for (const auto& [t, prefix] : prefixes) active.add (prefix);
+
+    for (auto* param : p.getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param);
+        if (ranged == nullptr) continue;
+        const auto& id = ranged->paramID;
+        bool mine = false;
+        for (const auto& prefix : active) mine = mine || id.startsWith (prefix);
+        if (! mine || id == params::tapeBrake || id == params::tapeTrigger) continue;
+
+        const bool isChoice = dynamic_cast<juce::AudioParameterChoice*> (ranged) != nullptr
+                              || dynamic_cast<juce::AudioParameterBool*> (ranged) != nullptr;
+        float norm = ranged->getValue();
+        if (mutateOnly)
+        {
+            if (isChoice)
+            {
+                if (rng.nextFloat() < 0.2f)
+                {
+                    const int steps = std::max (2, ranged->getNumSteps());
+                    norm = juce::jlimit (0.0f, 1.0f, norm + (rng.nextBool() ? 1.0f : -1.0f) / (float) (steps - 1));
+                }
+            }
+            else
+            {
+                norm = juce::jlimit (0.0f, 1.0f, norm + (rng.nextFloat() - 0.5f) * 0.16f);
+            }
+        }
+        else
+        {
+            norm = rng.nextFloat();
+        }
+
+        // Keep the sound usable: mixes in the middle, feedback and resonance short of runaway.
+        float lo = 0.0f, hi = 1.0f;
+        if (id.endsWith ("_mix")) { lo = 0.25f; hi = 0.8f; }
+        else if (id == params::echoFeedback) hi = 0.7f;
+        else if (id.endsWith ("_depth")) lo = 0.3f;
+        else if (id.startsWith ("gate_") && id.endsWith ("_mode")) hi = ranged->convertTo0to1 (1.0f); // Steps or Euclid, never Sidechain
+        const float real = juce::jlimit (ranged->convertFrom0to1 (lo), ranged->convertFrom0to1 (hi), ranged->convertFrom0to1 (norm));
+        ranged->setValueNotifyingHost (ranged->convertTo0to1 (real));
+    }
+
+    if (mutateOnly)
+    {
+        if (! p.currentPresetName.endsWith ("*")) p.currentPresetName += " *";
+    }
+    else
+    {
+        p.currentPresetName = "Random";
+    }
+}
+
 juce::File PresetManager::userFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
