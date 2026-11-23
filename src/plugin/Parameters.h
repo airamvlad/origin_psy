@@ -55,6 +55,13 @@ inline const juce::String orbitTone = "orbit_tone";
 inline const juce::String orbitWidth = "orbit_width";
 inline const juce::String orbitMix = "orbit_mix";
 
+inline const juce::String tapeMode = "tape_mode";
+inline const juce::String tapeTrigger = "tape_trigger";
+inline const juce::String tapeBrake = "tape_brake";
+inline const juce::String tapeLength = "tape_length";
+inline const juce::String tapeCurve = "tape_curve";
+inline const juce::String tapeMix = "tape_mix";
+
 inline juce::String lfoRate (int i) { return "lfo" + juce::String (i + 1) + "_rate"; }
 inline juce::String lfoShape (int i) { return "lfo" + juce::String (i + 1) + "_shape"; }
 inline juce::String macro (int i) { return "macro" + juce::String (i + 1); }

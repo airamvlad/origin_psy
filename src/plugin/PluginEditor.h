@@ -22,6 +22,7 @@ inline const juce::Colour magenta { 0xffe24bd8 };
 inline const juce::Colour amber { 0xffffb347 };
 inline const juce::Colour lime { 0xffa6ff4d };
 inline const juce::Colour blue { 0xff5aa9ff };
+inline const juce::Colour orange { 0xffff7a45 };
 } // namespace colours
 
 class PsyLookAndFeel : public juce::LookAndFeel_V4
@@ -163,6 +164,23 @@ private:
     Knob radius, doppler, tone, width, mix;
     std::array<juce::Point<float>, 24> trail {};
     int trailPos = 0;
+};
+
+class TapePage : public juce::Component
+{
+public:
+    explicit TapePage (OriginPsyProcessor&);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void setBrake (bool on);
+
+    OriginPsyProcessor& proc;
+    Choice mode, trigger, length;
+    Knob curve, mix;
+    juce::TextButton brake { "BRAKE" };
+    float reelAngle = 0.0f;
 };
 
 class GateRing : public juce::Component
@@ -307,6 +325,7 @@ private:
     originpsy::ui::GatePage gatePage;
     originpsy::ui::ZapPage zapPage;
     originpsy::ui::OrbitPage orbitPage;
+    originpsy::ui::TapePage tapePage;
     originpsy::ui::FrazaStrip fraza;
     originpsy::ui::ModStrip modStrip;
     originpsy::ui::PresetBar presetBar;

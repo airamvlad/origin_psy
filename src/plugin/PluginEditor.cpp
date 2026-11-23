@@ -14,6 +14,7 @@ juce::Colour moduleColour (int type)
         case ModuleType::polimetarGate: return colours::amber;
         case ModuleType::zapResonator:  return colours::lime;
         case ModuleType::orbitDoppler:  return colours::blue;
+        case ModuleType::tapeStop:      return colours::orange;
         case ModuleType::empty:         break;
     }
     return colours::dim;
@@ -695,6 +696,96 @@ void OrbitPage::resized()
 }
 
 //==============================================================================
+TapePage::TapePage (OriginPsyProcessor& p)
+    : proc (p),
+      mode (p.apvts, params::tapeMode, "Mode"),
+      trigger (p.apvts, params::tapeTrigger, "Trigger"),
+      length (p.apvts, params::tapeLength, "Length"),
+      curve (p.apvts, params::tapeCurve, "Curve", colours::orange),
+      mix (p.apvts, params::tapeMix, "Mix", colours::orange)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &mode, &trigger, &length, &curve, &mix, &brake })
+        addAndMakeVisible (c);
+    // Hold to brake; let go to come back.
+    brake.setColour (juce::TextButton::buttonColourId, colours::orange.withAlpha (0.25f));
+    brake.setColour (juce::TextButton::buttonOnColourId, colours::orange.withAlpha (0.8f));
+    brake.setTooltip ("Hold to slow the tape down, let go to bring it back. Automate Tape Brake to play it from the song.");
+    brake.onStateChange = [this] {
+        const bool down = brake.isDown();
+        const bool on = proc.apvts.getRawParameterValue (params::tapeBrake)->load() > 0.5f;
+        if (down != on) setBrake (down);
+    };
+}
+
+void TapePage::setBrake (bool on)
+{
+    if (auto* prm = proc.apvts.getParameter (params::tapeBrake))
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (on ? 1.0f : 0.0f);
+        prm->endChangeGesture();
+    }
+}
+
+void TapePage::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawPanel (g, r, colours::orange, "TAPE STOP");
+    brake.setToggleState (proc.apvts.getRawParameterValue (params::tapeBrake)->load() > 0.5f, juce::dontSendNotification);
+
+    // Two reels that turn at the tape speed.
+    const float speed = proc.meters.tapeSpeed.load();
+    reelAngle += speed * 0.35f;
+    if (reelAngle > juce::MathConstants<float>::twoPi) reelAngle -= juce::MathConstants<float>::twoPi;
+    auto area = r.withWidth (560.0f).reduced (24.0f, 34.0f);
+    const float rad = std::min (area.getHeight() * 0.36f, area.getWidth() * 0.18f);
+    const juce::Point<float> c1 (area.getCentreX() - rad * 1.45f, area.getY() + rad + 10.0f);
+    const juce::Point<float> c2 (area.getCentreX() + rad * 1.45f, c1.y);
+    g.setColour (colours::outline);
+    g.drawLine (c1.x, c1.y + rad, c2.x, c2.y + rad, 2.0f);
+    for (auto c : { c1, c2 })
+    {
+        g.setColour (colours::panelLight);
+        g.fillEllipse (juce::Rectangle<float> (rad * 2.0f, rad * 2.0f).withCentre (c));
+        g.setColour (colours::orange.withAlpha (0.4f + 0.6f * speed));
+        g.drawEllipse (juce::Rectangle<float> (rad * 2.0f, rad * 2.0f).withCentre (c), 2.0f);
+        for (int k = 0; k < 3; ++k)
+        {
+            const float a = reelAngle + (float) k * juce::MathConstants<float>::twoPi / 3.0f;
+            g.drawLine (c.x + std::sin (a) * rad * 0.2f, c.y - std::cos (a) * rad * 0.2f,
+                        c.x + std::sin (a) * rad * 0.85f, c.y - std::cos (a) * rad * 0.85f, 3.0f);
+        }
+        g.fillEllipse (juce::Rectangle<float> (rad * 0.3f, rad * 0.3f).withCentre (c));
+    }
+
+    // Speed bar.
+    auto bar = area.withTop (c1.y + rad + 26.0f).withHeight (14.0f).reduced (40.0f, 0.0f);
+    g.setColour (colours::panelLight);
+    g.fillRoundedRectangle (bar, 4.0f);
+    g.setColour (colours::orange);
+    g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, speed)), 4.0f);
+    g.setColour (colours::text);
+    g.setFont (juce::FontOptions (12.0f));
+    g.drawText ("speed " + juce::String (juce::roundToInt (speed * 100.0f)) + " %", bar.translated (0.0f, 18.0f),
+                juce::Justification::centred);
+}
+
+void TapePage::resized()
+{
+    auto r = getLocalBounds().withTrimmedLeft (576).reduced (12, 30);
+    auto top = r.removeFromTop (46);
+    const int cw = top.getWidth() / 3;
+    mode.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    trigger.setBounds (top.removeFromLeft (cw).reduced (4, 0));
+    length.setBounds (top.reduced (4, 0));
+    r.removeFromTop (8);
+    const int kh = r.getHeight() / 2, kw = r.getWidth() / 4;
+    curve.setBounds (r.getX(), r.getY(), kw, kh);
+    mix.setBounds (r.getX() + kw, r.getY(), kw, kh);
+    brake.setBounds (juce::Rectangle<int> (r.getX() + 2 * kw, r.getY(), 2 * kw, kh).reduced (14, 22));
+}
+
+//==============================================================================
 GateRing::GateRing (OriginPsyProcessor& p, int b) : proc (p), band (b) {}
 
 void GateRing::paint (juce::Graphics& g)
@@ -1129,7 +1220,7 @@ void SlotCard::mouseUp (const juce::MouseEvent&) { onSelect (moduleType()); }
 //==============================================================================
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
-      echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), fraza (p), modStrip (p), presetBar (p),
+      echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), tapePage (p), fraza (p), modStrip (p), presetBar (p),
       output (p.apvts, params::outGain, "Output", colours::cyan, true)
 {
     setLookAndFeel (&lnf);
@@ -1143,6 +1234,7 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addChildComponent (gatePage);
     addChildComponent (zapPage);
     addChildComponent (orbitPage);
+    addChildComponent (tapePage);
     addAndMakeVisible (fraza);
     addAndMakeVisible (modStrip);
     addAndMakeVisible (presetBar);
@@ -1167,6 +1259,7 @@ void OriginPsyEditor::showModule (int type)
     gatePage.setVisible (type == (int) ModuleType::polimetarGate);
     zapPage.setVisible (type == (int) ModuleType::zapResonator);
     orbitPage.setVisible (type == (int) ModuleType::orbitDoppler);
+    tapePage.setVisible (type == (int) ModuleType::tapeStop);
     for (auto& c : cards)
     {
         c->selected = c->moduleType() == type;
@@ -1204,7 +1297,8 @@ void OriginPsyEditor::resized()
     for (int i = 0; i < Chain::numSlots; ++i)
         place (*cards[(size_t) i], { 16 + i * 255, 60, 243, 76 });
     for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
-                                (juce::Component*) &zapPage, (juce::Component*) &orbitPage })
+                                (juce::Component*) &zapPage, (juce::Component*) &orbitPage,
+                                (juce::Component*) &tapePage })
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
@@ -1222,7 +1316,8 @@ void OriginPsyEditor::timerCallback()
     modStrip.repaint();
     // Knobs show their modulation live.
     for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
-                                (juce::Component*) &zapPage, (juce::Component*) &orbitPage })
+                                (juce::Component*) &zapPage, (juce::Component*) &orbitPage,
+                                (juce::Component*) &tapePage })
         if (page->isVisible()) page->repaint();
     if (proc.currentPresetName != presetBar.shownName) presetBar.syncName();
     repaint (getLocalBounds().withHeight (getHeight() * 56 / 790));

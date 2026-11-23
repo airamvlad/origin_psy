@@ -3,6 +3,7 @@
 #include "FraktalEcho.h"
 #include "OrbitDoppler.h"
 #include "PolimetarGate.h"
+#include "TapeStop.h"
 #include "VokalAcid.h"
 #include "ZapResonator.h"
 
@@ -11,8 +12,8 @@
 namespace originpsy
 {
 
-enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler };
-constexpr int numModuleTypes = 6;
+enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler, tapeStop };
+constexpr int numModuleTypes = 7;
 
 inline const char* moduleName (ModuleType t) noexcept
 {
@@ -23,6 +24,7 @@ inline const char* moduleName (ModuleType t) noexcept
         case ModuleType::polimetarGate: return "Polymeter Gate";
         case ModuleType::zapResonator:  return "Zap Resonator";
         case ModuleType::orbitDoppler:  return "Orbit Doppler";
+        case ModuleType::tapeStop:      return "Tape Stop";
         case ModuleType::empty:         break;
     }
     return "Empty";
@@ -69,6 +71,7 @@ public:
     PolimetarGate gate;
     ZapResonator zap;
     OrbitDoppler orbit;
+    TapeStop tape;
 
     void prepare (double sampleRate, int maxBlock)
     {
@@ -78,6 +81,7 @@ public:
         gate.prepare (sampleRate, maxBlock);
         zap.prepare (sampleRate, maxBlock);
         orbit.prepare (sampleRate, maxBlock);
+        tape.prepare (sampleRate, maxBlock);
         fadeSamples = std::max (1, (int) (sampleRate * 0.008));
         reset();
     }
@@ -89,6 +93,7 @@ public:
         gate.reset();
         zap.reset();
         orbit.reset();
+        tape.reset();
         fadeGain = 1.0f;
         fadingOut = false;
         active = pending;
@@ -113,6 +118,7 @@ public:
                 case ModuleType::polimetarGate: gate.process (left, right, numSamples, t); break;
                 case ModuleType::zapResonator:  zap.process (left, right, numSamples, t); break;
                 case ModuleType::orbitDoppler:  orbit.process (left, right, numSamples, t); break;
+                case ModuleType::tapeStop:      tape.process (left, right, numSamples, t); break;
                 case ModuleType::empty: break;
             }
         }
@@ -148,6 +154,7 @@ private:
             case ModuleType::polimetarGate: gate.reset(); break;
             case ModuleType::zapResonator:  zap.reset(); break;
             case ModuleType::orbitDoppler:  orbit.reset(); break;
+            case ModuleType::tapeStop:      tape.reset(); break;
             case ModuleType::empty: break;
         }
     }

@@ -10,6 +10,7 @@ OriginPsy is a chain of four slots that each take one of six modules, plus Phras
 | Phrase + Drop | A build-up tied to the position in the phrase, with no automation | done (v0.1) |
 | Zap Resonator | Every hit on the input triggers a short "laser" zap on a note from the scale | done |
 | Orbit Doppler | The sound circles the listener along a drawn path, with real Doppler shift (drawn paths later) | done |
+| Tape Stop | Tape stop, tape start and half speed, by hand or on the bar line (asked for in testing) | done |
 | Spectral Ratchet | Freezes the spectrum on each step and repeats it with a different interval or mask | later |
 
 ## Phases
@@ -19,7 +20,7 @@ OriginPsy is a chain of four slots that each take one of six modules, plus Phras
 3. Vocal Acid (done)
 4. Polymeter Gate (done)
 5. Phrase and Drop (done); drag and drop modulation and presets (done)
-6. Zap Resonator and Orbit Doppler (done); tape stop / tape start (next, requested in testing)
+6. Zap Resonator and Orbit Doppler (done); Tape Stop (done, requested in testing)
 7. Spectral Ratchet (FFT, latency reported to the host)
 8. Final pass: CPU, presets for every module, manual, AU build
 

@@ -192,6 +192,16 @@ void OriginPsyProcessor::updateModules()
     o.width = m (params::orbitWidth);
     o.mix = m (params::orbitMix);
     chain.orbit.setParams (o);
+
+    // Tape Stop. The Brake button is not modulated: it is read as it is.
+    TapeStop::Params tp;
+    tp.mode = (int) m (params::tapeMode);
+    tp.trigger = (int) m (params::tapeTrigger);
+    tp.brake = value (params::tapeBrake) > 0.5f;
+    tp.length = (int) m (params::tapeLength);
+    tp.curve = m (params::tapeCurve);
+    tp.mix = m (params::tapeMix);
+    chain.tape.setParams (tp);
 }
 
 void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -244,6 +254,7 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.vokalVowel = chain.vokal.getVowelPosition();
     meters.vokalAccent = chain.vokal.getAccent();
     for (int b = 0; b < 3; ++b) meters.gateStep[(size_t) b] = chain.gate.getStep (b);
+    meters.tapeSpeed = chain.tape.getSpeed();
     meters.zapNote = chain.zap.getLastNote();
     meters.zapHits = chain.zap.getHitCount();
     meters.zapLevel = chain.zap.getLevel();

@@ -60,6 +60,7 @@ public:
         std::atomic<float> vokalVowel { 0.0f };
         std::atomic<float> vokalAccent { 0.0f };
         std::array<std::atomic<int>, 3> gateStep { { -1, -1, -1 } };
+        std::atomic<float> tapeSpeed { 1.0f };
         std::atomic<int> zapNote { -1 };
         std::atomic<uint32_t> zapHits { 0 };
         std::atomic<float> zapLevel { 0.0f };

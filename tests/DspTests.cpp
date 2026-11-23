@@ -489,6 +489,108 @@ void orbitTests()
     check (err < 1.0e-6, "orbit with mix 0 is a null test");
 }
 
+void tapeTests()
+{
+    // Manual brake, Stop mode, 1/2 note (1 s at 120 BPM).
+    TapeStop t;
+    t.prepare (sr, 256);
+    TapeStop::Params p;
+    p.mode = TapeStop::stop;
+    p.length = 3;
+    t.setParams (p);
+    t.reset();
+    const size_t sec = (size_t) sr;
+    auto l = sine (1000.0, sec * 4), r = l;
+    const auto ref = l;
+    auto runSpan = [&] (size_t from, size_t to) {
+        for (size_t s = from; s < to; s += 256)
+        {
+            const int n = (int) std::min<size_t> (256, to - s);
+            t.process (l.data() + s, r.data() + s, n, transportAt (120.0, 0.0));
+        }
+    };
+    runSpan (0, sec / 2);
+    p.brake = true;
+    t.setParams (p);
+    runSpan (sec / 2, sec * 2);
+    const double slowing = crossingRate (l, sec * 6 / 10, sec * 9 / 10);
+    check (slowing < 900.0 && slowing > 200.0, "braking lowers the pitch");
+    check (rms (l, sec * 16 / 10, sec * 2) < 1.0e-3, "after the slow down the tape is stopped");
+    check (t.getSpeed() < 0.01f, "speed reaches zero");
+    p.brake = false;
+    t.setParams (p);
+    runSpan (sec * 2, sec * 4);
+    double err = 0.0;
+    for (size_t i = sec * 2 + (size_t) (0.03 * sr); i < sec * 4; ++i) err = std::max (err, (double) std::abs (l[i] - ref[i]));
+    check (err < 1.0e-6, "letting go of the brake goes straight back to the live sound");
+
+    // Slow Down holds at half speed: one octave down.
+    TapeStop h;
+    h.prepare (sr, 256);
+    p = {};
+    p.mode = TapeStop::slowDown;
+    p.length = 2;   // 1/4 = 0.5 s
+    p.brake = true;
+    h.setParams (p);
+    h.reset();
+    auto hl = sine (1000.0, sec * 2), hr = hl;
+    run (h, hl, hr, 120.0);
+    check (std::abs (crossingRate (hl, sec, sec * 2) - 500.0) < 10.0, "Slow Down holds an octave lower");
+    check (allFinite (hl), "slow down output is finite");
+
+    // Every 2 bars: stopped just before the bar line, live again after it.
+    TapeStop a;
+    a.prepare (sr, 256);
+    p = {};
+    p.mode = TapeStop::stop;
+    p.trigger = TapeStop::every2;
+    p.length = 3;   // 1/2 note
+    a.setParams (p);
+    a.reset();
+    check (! TapeStop::autoEngaged (p, 5.0, 4.0) && TapeStop::autoEngaged (p, 7.0, 4.0), "auto trigger fires in the last half note of 2 bars");
+    check (! TapeStop::autoEngaged (p, 8.1, 4.0), "auto trigger lets go on the bar line");
+    auto al = sine (1000.0, sec * 5), ar = al;   // 2 bars = 4 s at 120 BPM
+    const auto aref = al;
+    run (a, al, ar, 120.0);
+    check (crossingRate (al, sec * 38 / 10, sec * 4) < 450.0, "the tape has nearly stopped at the end of bar 2");
+    double aerr = 0.0;
+    for (size_t i = sec * 4 + (size_t) (0.03 * sr); i < sec * 5; ++i) aerr = std::max (aerr, (double) std::abs (al[i] - aref[i]));
+    check (aerr < 1.0e-6, "the next bar starts live");
+
+    // Start mode spins up from a stop.
+    TapeStop st;
+    st.prepare (sr, 256);
+    p = {};
+    p.mode = TapeStop::start;
+    p.length = 3;
+    st.setParams (p);
+    st.reset();
+    auto sl = sine (1000.0, sec * 2), sr2 = sl;
+    for (size_t s = 0; s < sec * 2; s += 256)
+    {
+        if (! p.brake && s >= sec / 2) { p.brake = true; st.setParams (p); }
+        st.process (sl.data() + s, sr2.data() + s, 256, transportAt (120.0, 0.0));
+    }
+    check (crossingRate (sl, sec * 6 / 10, sec * 8 / 10) < 500.0, "Start begins at a low pitch");
+    check (crossingRate (sl, sec * 12 / 10, sec * 14 / 10) > crossingRate (sl, sec * 6 / 10, sec * 8 / 10) + 200.0, "Start spins up");
+    check (std::abs (crossingRate (sl, sec * 17 / 10, sec * 2) - 1000.0) < 10.0, "after spinning up the pitch is normal");
+    check (allFinite (sl), "start output is finite");
+
+    // Mix 0 is a null test.
+    TapeStop n;
+    n.prepare (sr, 256);
+    p = {};
+    p.mix = 0.0f;
+    p.brake = true;
+    n.setParams (p);
+    n.reset();
+    auto nl = saw (220.0, sec), nr = nl, nref = nl;
+    run (n, nl, nr, 140.0);
+    double nerr = 0.0;
+    for (size_t i = 0; i < sec; ++i) nerr = std::max (nerr, (double) std::abs (nl[i] - nref[i]));
+    check (nerr < 1.0e-6, "tape stop with mix 0 is a null test");
+}
+
 void modulationTests()
 {
     // LFO 1/4 rate: one cycle per quarter note, locked to the song position.
@@ -567,6 +669,7 @@ int main()
     modulationTests();
     zapTests();
     orbitTests();
+    tapeTests();
     performanceTest();
 
     if (failures == 0) std::printf ("All DSP tests passed.\n");
