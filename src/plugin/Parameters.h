@@ -14,6 +14,7 @@ inline juce::String slotMix (int i) { return "slot" + juce::String (i + 1) + "_m
 inline juce::String slotSolo (int i) { return "slot" + juce::String (i + 1) + "_solo"; }
 inline const juce::String outLimit = "out_limit";
 inline const juce::String outCeiling = "out_ceiling";
+inline const juce::String outMix = "out_mix";
 
 inline const juce::String echoTime = "echo_time";
 inline const juce::String echoRatio = "echo_ratio";
@@ -66,6 +67,10 @@ inline const juce::String tapeBrake = "tape_brake";
 inline const juce::String tapeLength = "tape_length";
 inline const juce::String tapeCurve = "tape_curve";
 inline const juce::String tapeMix = "tape_mix";
+inline const juce::String tapeDrawn = "tape_drawn";
+inline const juce::String tapeDrive = "tape_drive";
+inline const juce::String tapeCrush = "tape_crush";
+inline const juce::String tapeFilter = "tape_filter";
 
 inline const juce::String ratchetRate = "ratchet_rate";
 inline const juce::String ratchetSteps = "ratchet_steps";

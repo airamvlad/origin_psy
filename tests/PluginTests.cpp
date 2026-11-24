@@ -96,6 +96,34 @@ void sampleRatesAndBlocks()
     check (healthy (out), "shorter blocks than announced work");
 }
 
+void globalDryWet()
+{
+    // Dry/Wet at 0: the input comes out untouched, also with a latent module in the chain.
+    for (bool withRatchet : { false, true })
+    {
+        OriginPsyProcessor p;
+        setValue (p, params::outMix, 0.0f);
+        setValue (p, params::outLimit, 0.0f);
+        if (withRatchet) setValue (p, params::slotModule (1), (float) ModuleType::spectralRatchet);
+        p.prepareToPlay (48000.0, 256);
+        p.prepareToPlay (48000.0, 256); // latency from the new layout
+        const auto out = run (p, 48000.0, 256, 24000);
+        const int latency = p.getLatencySamples();
+        check (withRatchet == (latency > 0), "latency follows the chain");
+        double phase = 0.0, worst = 0.0;
+        std::vector<float> in;
+        for (int i = 0; i < 24000; ++i)
+        {
+            in.push_back (0.5f * (float) (2.0 * phase - 1.0));
+            phase += 110.0 / 48000.0;
+            phase -= std::floor (phase);
+        }
+        for (int i = latency + 10; i < 24000; ++i)
+            worst = std::max (worst, (double) std::abs (out[(size_t) i] - in[(size_t) (i - latency)]));
+        check (worst < 1.0e-4, withRatchet ? "Dry/Wet 0 lines up with Spectral Ratchet latency" : "Dry/Wet 0 is the dry input");
+    }
+}
+
 void emptyChainIsTransparent()
 {
     OriginPsyProcessor p;
@@ -244,6 +272,47 @@ void state()
            "state restores the chain");
     check ((int) b.apvts.getRawParameterValue (params::vokalVowel (9))->load() == 4, "state restores the vowel map");
     check (b.getGatePattern (1) == 0xA5A5u, "state restores drawn gate patterns");
+
+    // The hand-drawn Phrase curve is saved with the project.
+    {
+        OriginPsyProcessor c;
+        check (std::abs (c.getFrazaCustomPoint (Fraza::numCustomPoints - 1) - 1.0f) < 1e-6f
+                   && c.getFrazaCustomPoint (0) == 0.0f, "a new custom curve is a straight rise");
+        setValue (c, params::frazaCurve, (float) Fraza::custom);
+        for (int i = 0; i < Fraza::numCustomPoints; ++i) c.setFrazaCustomPoint (i, (i % 2) ? 0.8f : 0.2f);
+        juce::MemoryBlock cd;
+        c.getStateInformation (cd);
+        OriginPsyProcessor d;
+        d.setStateInformation (cd.getData(), (int) cd.getSize());
+        check ((int) d.apvts.getRawParameterValue (params::frazaCurve)->load() == Fraza::custom, "state restores Custom curve choice");
+        bool same = true;
+        for (int i = 0; i < Fraza::numCustomPoints; ++i)
+            same = same && std::abs (d.getFrazaCustomPoint (i) - ((i % 2) ? 0.8f : 0.2f)) < 1e-3f;
+        check (same, "state restores the drawn Phrase curve");
+
+        // Projects saved before the custom curve still load, with a straight rise.
+        data.reset();
+        a.getStateInformation (data);
+        auto xml = OriginPsyProcessor::getXmlFromBinary (data.getData(), (int) data.getSize());
+        xml->removeAttribute ("fraza_custom");
+        juce::MemoryBlock old;
+        OriginPsyProcessor::copyXmlToBinary (*xml, old);
+        d.setStateInformation (old.getData(), (int) old.getSize());
+        check (std::abs (d.getFrazaCustomPoint (Fraza::numCustomPoints / 2) - 0.5f) < 0.01f, "old projects get a straight rise");
+    }
+
+    // The drawn Tape Stop curve too.
+    {
+        OriginPsyProcessor c;
+        setValue (c, params::tapeDrawn, 1.0f);
+        for (int i = 0; i < TapeStop::numDrawnPoints; ++i) c.setTapeDrawnPoint (i, 0.3f);
+        juce::MemoryBlock cd;
+        c.getStateInformation (cd);
+        OriginPsyProcessor d;
+        d.setStateInformation (cd.getData(), (int) cd.getSize());
+        check (d.apvts.getRawParameterValue (params::tapeDrawn)->load() > 0.5f
+                   && std::abs (d.getTapeDrawnPoint (10) - 0.3f) < 1e-3f, "state restores the drawn tape curve");
+    }
 
     b.toggleGateStep (1, 0);
     check (b.getGatePattern (1) == 0xA5A4u, "clicking a step toggles it");
@@ -619,6 +688,7 @@ int main (int argc, char** argv)
     emptyChainIsTransparent();
     slotMixSoloAndLimiter();
     allModulesAndFraza();
+    globalDryWet();
     state();
     modulation();
     presets();

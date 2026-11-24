@@ -477,7 +477,7 @@ void PresetManager::randomize (OriginPsyProcessor& p, bool mutateOnly, juce::Ran
         const auto& id = ranged->paramID;
         bool mine = false;
         for (const auto& prefix : active) mine = mine || id.startsWith (prefix);
-        if (! mine || id == params::tapeBrake || id == params::tapeTrigger) continue;
+        if (! mine || id == params::tapeBrake || id == params::tapeTrigger || id == params::tapeDrawn) continue;
 
         const bool isChoice = dynamic_cast<juce::AudioParameterChoice*> (ranged) != nullptr
                               || dynamic_cast<juce::AudioParameterBool*> (ranged) != nullptr;
@@ -555,6 +555,8 @@ void PresetManager::resetToDefaults (OriginPsyProcessor& p)
     p.setGatePattern (1, 0x15u);
     p.setGatePattern (2, 0x1249u);
     p.setRatchetPattern (0xEEEEu);
+    p.resetFrazaCustom();
+    p.resetTapeDrawn();
 }
 
 bool PresetManager::loadFactory (int index)

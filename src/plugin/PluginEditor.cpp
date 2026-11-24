@@ -714,9 +714,14 @@ TapePage::TapePage (OriginPsyProcessor& p)
       trigger (p.apvts, params::tapeTrigger, "Trigger"),
       length (p.apvts, params::tapeLength, "Length"),
       curve (p.apvts, params::tapeCurve, "Curve", colours::orange),
-      mix (p.apvts, params::tapeMix, "Mix", colours::orange)
+      mix (p.apvts, params::tapeMix, "Mix", colours::orange),
+      drive (p.apvts, params::tapeDrive, "Drive", colours::magenta),
+      crush (p.apvts, params::tapeCrush, "Crush", colours::magenta),
+      filter (p.apvts, params::tapeFilter, "Filter", colours::magenta),
+      curveView (p)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &mode, &trigger, &length, &curve, &mix, &brake })
+    for (auto* c : std::initializer_list<juce::Component*> { &mode, &trigger, &length, &curve, &mix, &brake,
+                                                            &drive, &crush, &filter, &curveView })
         addAndMakeVisible (c);
     // Hold to brake; let go to come back.
     brake.setColour (juce::TextButton::buttonColourId, colours::orange.withAlpha (0.25f));
@@ -751,7 +756,7 @@ void TapePage::paint (juce::Graphics& g)
     const float speed = proc.meters.tapeSpeed.load();
     reelAngle += speed * 0.35f;
     if (reelAngle > juce::MathConstants<float>::twoPi) reelAngle -= juce::MathConstants<float>::twoPi;
-    auto area = r.withWidth (560.0f).reduced (24.0f, 34.0f);
+    auto area = r.withWidth (300.0f).reduced (20.0f, 34.0f);
     const float rad = std::min (area.getHeight() * 0.36f, area.getWidth() * 0.18f);
     const juce::Point<float> c1 (area.getCentreX() - rad * 1.45f, area.getY() + rad + 10.0f);
     const juce::Point<float> c2 (area.getCentreX() + rad * 1.45f, c1.y);
@@ -782,6 +787,12 @@ void TapePage::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (12.0f));
     g.drawText ("speed " + juce::String (juce::roundToInt (speed * 100.0f)) + " %", bar.translated (0.0f, 18.0f),
                 juce::Justification::centred);
+
+    // Caption over the stop-only effects.
+    g.setColour (colours::magenta.withAlpha (0.4f + 0.6f * proc.meters.tapeFx.load()));
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawFittedText ("Drive, Crush, Filter:\nonly while stopping", fxCaption.toNearestInt(), juce::Justification::centredLeft, 3);
+    curveView.repaint();
 }
 
 void TapePage::resized()
@@ -797,6 +808,12 @@ void TapePage::resized()
     curve.setBounds (r.getX(), r.getY(), kw, kh);
     mix.setBounds (r.getX() + kw, r.getY(), kw, kh);
     brake.setBounds (juce::Rectangle<int> (r.getX() + 2 * kw, r.getY(), 2 * kw, kh).reduced (14, 22));
+    fxCaption = juce::Rectangle<int> (r.getX() + 3 * kw, r.getY() + kh + 8, kw, kh - 24).toFloat();
+    drive.setBounds (r.getX(), r.getY() + kh + 8, kw, kh - 8);
+    crush.setBounds (r.getX() + kw, r.getY() + kh + 8, kw, kh - 8);
+    filter.setBounds (r.getX() + 2 * kw, r.getY() + kh + 8, kw, kh - 8);
+
+    curveView.setBounds (300, 36, 262, 250);
 }
 
 //==============================================================================
@@ -1045,17 +1062,303 @@ void GatePage::resized()
 }
 
 //==============================================================================
+CurveDrawer::CurveDrawer()
+{
+    setMouseCursor (juce::MouseCursor::CrosshairCursor);
+}
+
+float CurveDrawer::toIndex (float x) const
+{
+    const auto r = curveArea();
+    return juce::jlimit (0.0f, 1.0f, (x - r.getX()) / r.getWidth()) * (float) (numPoints() - 1);
+}
+
+float CurveDrawer::toValue (float y) const
+{
+    const auto r = curveArea();
+    return juce::jlimit (0.0f, 1.0f, (r.getBottom() - y) / r.getHeight());
+}
+
+juce::Path CurveDrawer::pointsPath (const juce::Rectangle<float>& area) const
+{
+    juce::Path path;
+    const int n = numPoints();
+    for (int i = 0; i < n; ++i)
+    {
+        const float x = area.getX() + area.getWidth() * (float) i / (float) (n - 1);
+        const float y = area.getBottom() - getPoint (i) * area.getHeight();
+        if (i == 0) path.startNewSubPath (x, y); else path.lineTo (x, y);
+    }
+    return path;
+}
+
+void CurveDrawer::drawSegment (juce::Point<float> from, juce::Point<float> to)
+{
+    float i0 = toIndex (from.x), i1 = toIndex (to.x);
+    float v0 = toValue (from.y), v1 = toValue (to.y);
+    if (i0 > i1) { std::swap (i0, i1); std::swap (v0, v1); }
+    const int a = juce::roundToInt (i0), b = juce::roundToInt (i1);
+    for (int i = a; i <= b; ++i)
+    {
+        const float t = i1 - i0 < 1.0e-4f ? 1.0f : juce::jlimit (0.0f, 1.0f, ((float) i - i0) / (i1 - i0));
+        setPoint (i, v0 + (v1 - v0) * t);
+    }
+}
+
+void CurveDrawer::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu()) { showMenu(); return; }
+    beginDrawing();
+    dragStart.resize ((size_t) numPoints());
+    for (int i = 0; i < numPoints(); ++i) dragStart[(size_t) i] = getPoint (i);
+    downPos = lastPos = e.position;
+    drawSegment (e.position, e.position);
+    repaint();
+}
+
+void CurveDrawer::mouseDrag (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu()) return;
+    if (e.mods.isShiftDown())
+    {
+        // Straight line from where the drag started; the rest stays as it was.
+        for (int i = 0; i < (int) dragStart.size(); ++i) setPoint (i, dragStart[(size_t) i]);
+        drawSegment (downPos, e.position);
+    }
+    else
+    {
+        drawSegment (lastPos, e.position);
+    }
+    lastPos = e.position;
+    repaint();
+}
+
+void CurveDrawer::mouseUp (const juce::MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu()) { edited(); repaint(); }
+}
+
+void CurveDrawer::showMenu()
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("Drawn curve");
+    m.addItem (1, "Start from the current shape");
+    m.addItem (2, "Reset");
+    m.addItem (3, "Smooth");
+    m.addItem (4, "Flip up/down");
+    m.addItem (5, "Reverse (back to front)");
+    m.addItem (6, "Clear (flat at zero)");
+    addMenuItems (m);
+    juce::Component::SafePointer<CurveDrawer> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int choice) {
+        if (safe == nullptr || choice <= 0) return;
+        auto& self = *safe;
+        if (choice >= 100) { self.menuItemChosen (choice); self.edited(); self.repaint(); return; }
+        self.beginDrawing(); // copies a ready-made shape first, so every item works on what is shown
+        const int n = self.numPoints();
+        std::vector<float> pts ((size_t) n);
+        for (int i = 0; i < n; ++i) pts[(size_t) i] = self.getPoint (i);
+        switch (choice)
+        {
+            case 2: for (int i = 0; i < n; ++i) pts[(size_t) i] = self.defaultPoint (i); break;
+            case 3:
+            {
+                const auto src = pts;
+                for (int i = 0; i < n; ++i)
+                {
+                    float sum = 0.0f; int count = 0;
+                    for (int k = -3; k <= 3; ++k)
+                        if (i + k >= 0 && i + k < n) { sum += src[(size_t) (i + k)]; ++count; }
+                    pts[(size_t) i] = sum / (float) count;
+                }
+                break;
+            }
+            case 4: for (auto& v : pts) v = 1.0f - v; break;
+            case 5: std::reverse (pts.begin(), pts.end()); break;
+            case 6: std::fill (pts.begin(), pts.end(), 0.0f); break;
+            default: break;
+        }
+        for (int i = 0; i < n; ++i) self.setPoint (i, pts[(size_t) i]);
+        self.edited();
+        self.repaint();
+    });
+}
+
+//==============================================================================
+PhraseView::PhraseView (OriginPsyProcessor& p) : proc (p)
+{
+    setTooltip ("Draw on the curve to make your own (Custom). Shift-drag: straight line. Right-click: reset, smooth, flip");
+}
+
+juce::Rectangle<float> PhraseView::plotArea() const
+{
+    return getLocalBounds().toFloat().reduced (8.0f, 10.0f);
+}
+
+juce::Rectangle<float> PhraseView::curveArea() const
+{
+    const auto r = plotArea();
+    return { r.getX(), r.getBottom() - 12.0f - (r.getHeight() - 14.0f), r.getWidth(), r.getHeight() - 14.0f };
+}
+
+int PhraseView::numPoints() const { return Fraza::numCustomPoints; }
+float PhraseView::getPoint (int i) const { return proc.getFrazaCustomPoint (i); }
+void PhraseView::setPoint (int i, float v) { proc.setFrazaCustomPoint (i, v); }
+float PhraseView::defaultPoint (int i) const { return (float) i / (float) (Fraza::numCustomPoints - 1); }
+
+void PhraseView::beginDrawing()
+{
+    auto* param = proc.apvts.getParameter (params::frazaCurve);
+    const int current = (int) proc.apvts.getRawParameterValue (params::frazaCurve)->load();
+    if (current == Fraza::custom) return;
+
+    Fraza::Params fp;
+    const int barsChoice = (int) proc.apvts.getRawParameterValue (params::frazaBars)->load();
+    fp.bars = barsChoice == 0 ? 8 : (barsChoice == 1 ? 16 : 32);
+    fp.curve = current;
+    std::array<float, Fraza::numCustomPoints> pts {};
+    Fraza::fillCustomFrom (fp, pts.data());
+    proc.setFrazaCustom (pts.data());
+
+    param->beginChangeGesture();
+    param->setValueNotifyingHost (param->convertTo0to1 ((float) Fraza::custom));
+    param->endChangeGesture();
+}
+
+void PhraseView::edited()
+{
+    proc.updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
+}
+
+//==============================================================================
+TapeCurveView::TapeCurveView (OriginPsyProcessor& p) : proc (p)
+{
+    setTooltip ("Tape speed over the slow down (the spin-up plays it backwards). Draw to shape it yourself; "
+                "right-click to go back to the Curve knob");
+}
+
+bool TapeCurveView::drawnOn() const { return proc.apvts.getRawParameterValue (params::tapeDrawn)->load() > 0.5f; }
+int TapeCurveView::numPoints() const { return TapeStop::numDrawnPoints; }
+float TapeCurveView::getPoint (int i) const { return proc.getTapeDrawnPoint (i); }
+void TapeCurveView::setPoint (int i, float v) { proc.setTapeDrawnPoint (i, v); }
+
+float TapeCurveView::defaultPoint (int i) const
+{
+    std::array<float, TapeStop::numDrawnPoints> pts {};
+    TapeStop::fillDrawnFromKnob (0.5f, pts.data());
+    return pts[(size_t) i];
+}
+
+juce::Rectangle<float> TapeCurveView::curveArea() const
+{
+    return getLocalBounds().toFloat().reduced (10.0f, 12.0f).withTrimmedTop (10.0f);
+}
+
+void TapeCurveView::beginDrawing()
+{
+    if (drawnOn()) return;
+    std::array<float, TapeStop::numDrawnPoints> pts {};
+    TapeStop::fillDrawnFromKnob (proc.apvts.getRawParameterValue (params::tapeCurve)->load(), pts.data());
+    for (int i = 0; i < TapeStop::numDrawnPoints; ++i) proc.setTapeDrawnPoint (i, pts[(size_t) i]);
+    if (auto* prm = proc.apvts.getParameter (params::tapeDrawn))
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (1.0f);
+        prm->endChangeGesture();
+    }
+}
+
+void TapeCurveView::addMenuItems (juce::PopupMenu& m)
+{
+    m.addSeparator();
+    m.addItem (100, "Use the Curve knob instead", drawnOn());
+}
+
+void TapeCurveView::menuItemChosen (int id)
+{
+    if (id != 100) return;
+    if (auto* prm = proc.apvts.getParameter (params::tapeDrawn))
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (0.0f);
+        prm->endChangeGesture();
+    }
+}
+
+void TapeCurveView::edited()
+{
+    proc.updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
+}
+
+void TapeCurveView::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (colours::panelLight);
+    g.fillRoundedRectangle (r, 6.0f);
+    const auto area = curveArea();
+    const bool drawn = drawnOn();
+
+    g.setColour (colours::outline);
+    g.drawHorizontalLine ((int) area.getY(), area.getX(), area.getRight());
+    g.drawHorizontalLine ((int) area.getBottom(), area.getX(), area.getRight());
+
+    juce::Path path;
+    if (drawn)
+    {
+        path = pointsPath (area);
+    }
+    else
+    {
+        // The Curve knob's shape.
+        std::array<float, TapeStop::numDrawnPoints> pts {};
+        TapeStop::fillDrawnFromKnob (proc.apvts.getRawParameterValue (params::tapeCurve)->load(), pts.data());
+        for (int i = 0; i < TapeStop::numDrawnPoints; ++i)
+        {
+            const float x = area.getX() + area.getWidth() * (float) i / (float) (TapeStop::numDrawnPoints - 1);
+            const float y = area.getBottom() - pts[(size_t) i] * area.getHeight();
+            if (i == 0) path.startNewSubPath (x, y); else path.lineTo (x, y);
+        }
+    }
+    auto fill = path;
+    fill.lineTo (area.getRight(), area.getBottom());
+    fill.lineTo (area.getX(), area.getBottom());
+    fill.closeSubPath();
+    g.setColour (colours::orange.withAlpha (drawn ? 0.15f : 0.06f));
+    g.fillPath (fill);
+    g.setColour (drawn ? colours::orange : colours::orange.withAlpha (0.6f));
+    g.strokePath (path, juce::PathStrokeType (2.0f));
+
+    g.setFont (juce::FontOptions (10.5f));
+    g.setColour (colours::dim);
+    const auto label = r.reduced (10.0f, 4.0f).withHeight (14.0f);
+    g.drawText ("SPEED", label, juce::Justification::topLeft);
+    g.drawText (drawn ? "drawn" : (isMouseOverOrDragging() ? "draw to edit" : "Curve knob"), label,
+                juce::Justification::topRight);
+
+    // Extra effects light up while the stop is on.
+    const float fx = proc.meters.tapeFx.load();
+    if (fx > 0.01f)
+    {
+        g.setColour (colours::magenta.withAlpha (0.8f * fx));
+        g.drawText ("FX", label, juce::Justification::centredTop);
+    }
+}
+
 void PhraseView::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     g.setColour (colours::panelLight);
     g.fillRoundedRectangle (r, 6.0f);
-    r = r.reduced (8.0f, 10.0f);
+    r = plotArea();
 
     Fraza::Params fp;
     const int barsChoice = (int) proc.apvts.getRawParameterValue (params::frazaBars)->load();
     fp.bars = barsChoice == 0 ? 8 : (barsChoice == 1 ? 16 : 32);
     fp.curve = (int) proc.apvts.getRawParameterValue (params::frazaCurve)->load();
+    std::array<float, Fraza::numCustomPoints> custom {};
+    proc.getFrazaCustom (custom.data());
+    fp.customPoints = custom.data();
+    const bool isCustom = fp.curve == Fraza::custom;
 
     g.setColour (colours::outline);
     for (int bar = 0; bar <= fp.bars; ++bar)
@@ -1064,24 +1367,42 @@ void PhraseView::paint (juce::Graphics& g)
         g.drawVerticalLine ((int) x, r.getBottom() - (bar % 4 == 0 ? 10.0f : 5.0f), r.getBottom());
     }
 
+    const float baseY = r.getBottom() - 12.0f;
     juce::Path curve;
     for (int i = 0; i <= 200; ++i)
     {
         const double pos = i / 200.0;
-        const float v = Fraza::evaluate (fp, std::min (pos, 0.99999));
+        const float v = Fraza::evaluate (fp, isCustom ? pos : std::min (pos, 0.99999));
         const float x = r.getX() + r.getWidth() * (float) pos;
-        const float y = r.getBottom() - 12.0f - v * (r.getHeight() - 14.0f);
+        const float y = baseY - v * (r.getHeight() - 14.0f);
         if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
+    }
+    if (isCustom)
+    {
+        auto fill = curve;
+        fill.lineTo (r.getRight(), baseY);
+        fill.lineTo (r.getX(), baseY);
+        fill.closeSubPath();
+        g.setColour (colours::cyan.withAlpha (0.12f));
+        g.fillPath (fill);
     }
     g.setColour (colours::cyan);
     g.strokePath (curve, juce::PathStrokeType (2.0f));
+
+    if (isMouseOverOrDragging())
+    {
+        g.setColour (colours::dim);
+        g.setFont (juce::FontOptions (10.5f));
+        g.drawText (isCustom ? "draw  |  shift: line  |  right-click: menu" : "draw to edit this curve",
+                    r.withHeight (14.0f), juce::Justification::topLeft);
+    }
 
     const float x = r.getX() + r.getWidth() * (float) proc.meters.frazaPosition.load();
     g.setColour (colours::text.withAlpha (0.8f));
     g.drawVerticalLine ((int) x, r.getY(), r.getBottom());
     // Where the curve is now: this is the value the PHRASE source sends.
     const float now = proc.meters.frazaValue.load();
-    const float y = r.getBottom() - 12.0f - now * (r.getHeight() - 14.0f);
+    const float y = baseY - now * (r.getHeight() - 14.0f);
     g.setColour (colours::cyan);
     g.fillEllipse (juce::Rectangle<float> (9.0f, 9.0f).withCentre ({ x, y }));
     const float bar = (float) proc.meters.frazaPosition.load() * (float) fp.bars + 1.0f;
@@ -1418,7 +1739,8 @@ void SlotCard::itemDropped (const SourceDetails& d)
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
       echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), tapePage (p), ratchetPage (p), fraza (p), modStrip (p), presetBar (p),
-      output (p.apvts, params::outGain, "Output", colours::cyan, true)
+      output (p.apvts, params::outGain, "Output", colours::cyan, true),
+      mix (p.apvts, params::outMix, "Dry/Wet", colours::cyan, true)
 {
     setLookAndFeel (&lnf);
     for (int i = 0; i < Chain::numSlots; ++i)
@@ -1437,6 +1759,7 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addAndMakeVisible (modStrip);
     addAndMakeVisible (presetBar);
     addAndMakeVisible (output);
+    addAndMakeVisible (mix);
     limit.setClickingTogglesState (true);
     limit.setColour (juce::ToggleButton::tickColourId, colours::cyan);
     limit.setTooltip ("Output limiter: nothing goes over the ceiling (Output Ceiling parameter, -0.3 dB by default)");
@@ -1523,7 +1846,8 @@ void OriginPsyEditor::resized()
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
-    place (presetBar, { 300, 14, 528, 30 });
+    place (presetBar, { 300, 14, 448, 30 });
+    place (mix, { 756, 4, 74, 48 });
     place (output, { 900, 4, 124, 48 });
     place (limit, { 836, 12, 58, 22 });
 }

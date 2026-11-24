@@ -33,7 +33,7 @@ juce::StringArray moduleNames()
 
 juce::StringArray frazaCurveNames()
 {
-    return { "Rise", "Rise (late)", "Last bar", "Last 2 bars", "Last 4 bars", "Fall", "Every 4th bar" };
+    return { "Rise", "Rise (late)", "Last bar", "Last 2 bars", "Last 4 bars", "Fall", "Every 4th bar", "Custom" };
 }
 
 juce::StringArray lfoRateNames()
@@ -261,6 +261,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (choice (tapeLength, "Tape Length", lengthNames, 3));
         g->addChild (percent (tapeCurve, "Tape Curve", 0.5f));
         g->addChild (percent (tapeMix, "Tape Mix", 1.0f));
+        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { tapeDrawn, 1 }, "Tape Drawn Curve", false));
+        g->addChild (percent (tapeDrive, "Tape Stop Drive", 0.0f));
+        g->addChild (percent (tapeCrush, "Tape Stop Crush", 0.0f));
+        g->addChild (percent (tapeFilter, "Tape Stop Filter", 0.0f));
         layout.add (std::move (g));
     }
 
@@ -278,6 +282,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (percent (ratchetMix, "Ratchet Mix", 1.0f));
         layout.add (std::move (g));
     }
+
+    // Global Dry/Wet: added last so existing parameter order stays the same.
+    layout.add (percent (outMix, "Dry/Wet", 1.0f));
 
     return layout;
 }

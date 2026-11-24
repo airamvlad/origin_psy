@@ -1,4 +1,5 @@
 #include "dsp/Chain.h"
+#include "dsp/DryWet.h"
 #include "dsp/Fraza.h"
 #include "dsp/Fft.h"
 #include "dsp/Modulation.h"
@@ -128,6 +129,32 @@ void frazaTests()
     // 7/8: a bar is 3.5 quarter notes.
     p.offset = 0;
     check (near (Fraza::phrasePosition (p, 3.5 * 8.0, 3.5), 0.5, 1e-9), "phrase follows odd meters");
+
+    // Hand-drawn curve: points joined by straight lines.
+    float pts[Fraza::numCustomPoints];
+    for (auto& v : pts) v = 0.0f;
+    pts[Fraza::numCustomPoints - 1] = 1.0f;
+    p.curve = Fraza::custom;
+    p.customPoints = pts;
+    check (Fraza::evaluate (p, 0.5) == 0.0f, "custom curve follows the drawn points");
+    check (near (Fraza::evaluate (p, 1.0 - 0.5 / (Fraza::numCustomPoints - 1)), 0.5, 1e-5),
+           "custom curve joins points with lines");
+    p.customPoints = nullptr;
+    check (near (Fraza::evaluate (p, 0.25), 0.25, 1e-6), "custom curve without points falls back to a rise");
+
+    // Starting a custom curve from a ready-made one keeps its shape.
+    Fraza::Params shape;
+    shape.bars = 16;
+    shape.curve = Fraza::riseExp;
+    Fraza::fillCustomFrom (shape, pts);
+    p.customPoints = pts;
+    for (double pos : { 0.1, 0.37, 0.5, 0.81 })
+        check (near (Fraza::evaluate (p, pos), Fraza::evaluate (shape, pos), 0.01), "custom copy matches the shape");
+
+    // The ready-made curves are unchanged.
+    shape.curve = Fraza::rise;       check (near (Fraza::evaluate (shape, 0.3), 0.3, 1e-6), "rise unchanged");
+    shape.curve = Fraza::fall;       check (near (Fraza::evaluate (shape, 0.3), 0.7, 1e-6), "fall unchanged");
+    shape.curve = Fraza::last4Bars;  check (near (Fraza::evaluate (shape, 14.0 / 16.0), 0.5, 1e-6), "last 4 bars unchanged");
 }
 
 //==============================================================================
@@ -557,6 +584,59 @@ void orbitTests()
     check (err < 1.0e-6, "orbit with mix 0 is a null test");
 }
 
+void tapeExtrasTests()
+{
+    const size_t sec = (size_t) sr;
+    auto runBrake = [&] (TapeStop::Params p, std::vector<float>& l, std::vector<float>& r, size_t on, size_t off) {
+        TapeStop t;
+        t.prepare (sr, 256);
+        t.setParams (p);
+        t.reset();
+        for (size_t s = 0; s < l.size(); s += 256)
+        {
+            p.brake = s >= on && s < off;
+            t.setParams (p);
+            const int n = (int) std::min<size_t> (256, l.size() - s);
+            t.process (l.data() + s, r.data() + s, n, transportAt (120.0, 0.0));
+        }
+    };
+
+    // Extra effects: silent while live, heard while stopping, gone right after.
+    TapeStop::Params p;
+    p.mode = TapeStop::stop;
+    p.length = 3; // 1 s
+    auto cl = sine (1000.0, sec * 3), cr = cl, fl = cl, fr = cl;
+    runBrake (p, cl, cr, sec / 2, sec * 2);
+    p.drive = 1.0f;
+    p.crush = 0.7f;
+    p.filter = 0.8f;
+    runBrake (p, fl, fr, sec / 2, sec * 2);
+    double before = 0.0, during = 0.0, after = 0.0;
+    for (size_t i = 0; i < sec / 2; ++i) before = std::max (before, (double) std::abs (fl[i] - cl[i]));
+    for (size_t i = sec * 6 / 10; i < sec; ++i) during = std::max (during, (double) std::abs (fl[i] - cl[i]));
+    for (size_t i = sec * 2 + (size_t) (0.03 * sr); i < sec * 3; ++i) after = std::max (after, (double) std::abs (fl[i] - cl[i]));
+    check (before < 1.0e-6, "stop effects are off before the stop");
+    check (during > 0.05, "stop effects are heard while the tape stops");
+    check (after < 1.0e-6, "stop effects end when the stop ends");
+    check (allFinite (fl), "stop effects output is finite");
+
+    // Drawn curve: a flat line at half speed holds an octave down.
+    float drawn[TapeStop::numDrawnPoints];
+    for (auto& v : drawn) v = 0.5f;
+    TapeStop::Params d;
+    d.mode = TapeStop::stop;
+    d.length = 2;
+    d.drawn = drawn;
+    auto dl = sine (1000.0, sec * 2), dr = dl;
+    runBrake (d, dl, dr, 0, sec * 2);
+    check (std::abs (crossingRate (dl, sec / 10, sec * 4 / 10) - 500.0) < 15.0, "drawn curve sets the tape speed");
+    check (std::abs (crossingRate (dl, sec, sec * 2) - 500.0) < 15.0, "drawn curve end is held");
+
+    float knobShape[TapeStop::numDrawnPoints];
+    TapeStop::fillDrawnFromKnob (0.5f, knobShape);
+    check (knobShape[0] == 1.0f && knobShape[TapeStop::numDrawnPoints - 1] == 0.0f, "knob shape runs from full speed to stop");
+}
+
 void tapeTests()
 {
     // Manual brake, Stop mode, 1/2 note (1 s at 120 BPM).
@@ -758,6 +838,37 @@ void ratchetTests()
     check (allFinite (xl) && allFinite (xr), "spectral ratchet stays bounded at extreme settings");
 }
 
+void dryWetTests()
+{
+    DryWet dw;
+    dw.prepare (48000.0, 8, 64);
+    dw.setMix (0.0f);
+    dw.reset();
+    dw.setDelay (3);
+    std::vector<float> in (200), l (64), r (64), out;
+    for (size_t i = 0; i < in.size(); ++i) in[i] = (float) i + 1.0f;
+    for (size_t start = 0; start < in.size(); start += 50)
+    {
+        const int n = (int) std::min<size_t> (50, in.size() - start);
+        std::copy (in.begin() + (long) start, in.begin() + (long) start + n, l.begin());
+        std::copy (l.begin(), l.begin() + n, r.begin());
+        dw.pushDry (l.data(), r.data(), n);
+        for (int i = 0; i < n; ++i) l[(size_t) i] = r[(size_t) i] = -100.0f; // the "effect"
+        dw.blend (l.data(), r.data(), n);
+        out.insert (out.end(), l.begin(), l.begin() + n);
+    }
+    bool delayed = out[0] == 0.0f && out[2] == 0.0f;
+    for (size_t i = 3; i < out.size(); ++i) delayed = delayed && out[i] == in[i - 3];
+    check (delayed, "dry is delayed by the chain latency at mix 0");
+
+    dw.setMix (1.0f);
+    dw.reset();
+    l.assign (64, 0.25f);
+    dw.pushDry (in.data(), nullptr, 64);
+    dw.blend (l.data(), nullptr, 64);
+    check (l[10] == 0.25f, "mix 1 is only the effect");
+}
+
 void modulationTests()
 {
     // LFO 1/4 rate: one cycle per quarter note, locked to the song position.
@@ -829,6 +940,7 @@ int main()
     scaleTests();
     euclidTests();
     frazaTests();
+    dryWetTests();
     echoTests();
     vokalTests();
     gateTests();
@@ -837,6 +949,7 @@ int main()
     zapTests();
     orbitTests();
     tapeTests();
+    tapeExtrasTests();
     sidechainTests();
     ratchetTests();
     performanceTest();

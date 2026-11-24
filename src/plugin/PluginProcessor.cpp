@@ -11,6 +11,8 @@ OriginPsyProcessor::OriginPsyProcessor()
                           .withInput ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "OriginPsy", params::createLayout())
 {
+    resetFrazaCustom();
+    resetTapeDrawn();
     for (auto* p : getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
             if (params::isModulatable (*ranged))
@@ -60,6 +62,9 @@ void OriginPsyProcessor::prepareToPlay (double sr, int samplesPerBlock)
     clock.reset();
     outGain.reset (sr, 0.02);
     limiter.prepare (sr);
+    dryWet.prepare (sr, SpectralRatchet::latency, std::max (1, samplesPerBlock));
+    dryWet.setMix (value (params::outMix));
+    dryWet.reset();
     outGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (value (params::outGain)));
     wantedLatency = Chain::latencyOf (chain.activeLayout());
     setLatencySamples (wantedLatency.load());
@@ -222,6 +227,14 @@ void OriginPsyProcessor::updateModules()
     tp.length = (int) m (params::tapeLength);
     tp.curve = m (params::tapeCurve);
     tp.mix = m (params::tapeMix);
+    tp.drive = m (params::tapeDrive);
+    tp.crush = m (params::tapeCrush);
+    tp.filter = m (params::tapeFilter);
+    if (value (params::tapeDrawn) > 0.5f)
+    {
+        for (size_t i = 0; i < tapeDrawnBlock.size(); ++i) tapeDrawnBlock[i] = tapeDrawn[i].load (std::memory_order_relaxed);
+        tp.drawn = tapeDrawnBlock.data();
+    }
     chain.tape.setParams (tp);
 
     // Spectral Ratchet.
@@ -357,6 +370,12 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     fp.bars = barsChoice == 0 ? 8 : (barsChoice == 1 ? 16 : 32);
     fp.offset = (int) value (params::frazaOffset);
     fp.curve = (int) value (params::frazaCurve);
+    std::array<float, Fraza::numCustomPoints> customPoints;
+    if (fp.curve == Fraza::custom)
+    {
+        getFrazaCustom (customPoints.data());
+        fp.customPoints = customPoints.data();
+    }
     const double phrasePos = Fraza::phrasePosition (fp, t.ppqAtBlockStart, t.beatsPerBar);
     const float fraza = value (params::frazaOn) > 0.5f ? Fraza::evaluate (fp, phrasePos) : 0.0f;
 
@@ -365,6 +384,12 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     computeModulation (t, fraza, left, right, numSamples, key);
     updateModules();
+
+    // Global Dry/Wet: keep the input (delayed by the chain's latency) to blend back in.
+    if (! dryWet.fits (numSamples)) dryWet.prepare (sampleRate, SpectralRatchet::latency, numSamples); // only if the host lied about the block size
+    dryWet.setMix (m (params::outMix)); // modulatable: e.g. Phrase can bring the effect in
+    dryWet.setDelay (wantedLatency.load());
+    dryWet.pushDry (left, right, numSamples);
     if (right == nullptr)
     {
         // Mono: run the stereo chain on a copy and fold it back.
@@ -378,6 +403,7 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     {
         chain.process (left, right, numSamples, t, key);
     }
+    dryWet.blend (left, right, numSamples);
 
     outGain.setTargetValue (juce::Decibels::decibelsToGain (value (params::outGain)));
     for (int n = 0; n < numSamples; ++n)
@@ -404,6 +430,7 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.vokalAccent = chain.vokal.getAccent();
     for (int b = 0; b < 3; ++b) meters.gateStep[(size_t) b] = chain.gate.getStep (b);
     meters.tapeSpeed = chain.tape.getSpeed();
+    meters.tapeFx = chain.tape.getFxAmount();
     meters.ratchetStep = chain.ratchet.getStep();
     meters.ratchetFreezing = chain.ratchet.isFreezing();
     for (size_t b = 0; b < meters.ratchetBands.size(); ++b)
@@ -418,6 +445,39 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.frazaValue = fraza;
     meters.bpm = t.bpm;
     meters.hostPlaying = t.playing;
+}
+
+void OriginPsyProcessor::setFrazaCustomPoint (int i, float v) noexcept
+{
+    if (i >= 0 && i < Fraza::numCustomPoints) frazaCustom[(size_t) i] = juce::jlimit (0.0f, 1.0f, v);
+}
+
+void OriginPsyProcessor::getFrazaCustom (float* out) const noexcept
+{
+    for (int i = 0; i < Fraza::numCustomPoints; ++i) out[i] = frazaCustom[(size_t) i].load();
+}
+
+void OriginPsyProcessor::setFrazaCustom (const float* in) noexcept
+{
+    for (int i = 0; i < Fraza::numCustomPoints; ++i) setFrazaCustomPoint (i, in[i]);
+}
+
+void OriginPsyProcessor::resetFrazaCustom() noexcept
+{
+    for (int i = 0; i < Fraza::numCustomPoints; ++i)
+        frazaCustom[(size_t) i] = (float) i / (float) (Fraza::numCustomPoints - 1);
+}
+
+void OriginPsyProcessor::setTapeDrawnPoint (int i, float v) noexcept
+{
+    if (i >= 0 && i < TapeStop::numDrawnPoints) tapeDrawn[(size_t) i] = juce::jlimit (0.0f, 1.0f, v);
+}
+
+void OriginPsyProcessor::resetTapeDrawn() noexcept
+{
+    std::array<float, TapeStop::numDrawnPoints> pts;
+    TapeStop::fillDrawnFromKnob (0.5f, pts.data());
+    for (size_t i = 0; i < pts.size(); ++i) tapeDrawn[i] = pts[i];
 }
 
 void OriginPsyProcessor::setGatePattern (int band, uint32_t pattern)
@@ -477,6 +537,12 @@ juce::ValueTree OriginPsyProcessor::createStateTree()
     for (int b = 0; b < 3; ++b)
         state.setProperty ("gate_pattern_" + juce::String (b + 1), (juce::int64) gatePatterns[(size_t) b].load(), nullptr);
     state.setProperty ("ratchet_pattern", (juce::int64) ratchetPattern.load(), nullptr);
+    juce::StringArray custom;
+    for (const auto& v : frazaCustom) custom.add (juce::String (v.load(), 4));
+    state.setProperty ("fraza_custom", custom.joinIntoString (" "), nullptr);
+    juce::StringArray tape;
+    for (const auto& v : tapeDrawn) tape.add (juce::String (v.load(), 4));
+    state.setProperty ("tape_drawn_curve", tape.joinIntoString (" "), nullptr);
     state.setProperty ("version", JucePlugin_VersionString, nullptr);
     state.setProperty ("preset_name", currentPresetName, nullptr);
 
@@ -513,6 +579,27 @@ void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
     if (state.hasProperty ("ratchet_pattern"))
         ratchetPattern = (uint32_t) (juce::int64) state.getProperty ("ratchet_pattern") & 0xffffu;
     currentPresetName = state.getProperty ("preset_name", "Init").toString();
+
+    resetTapeDrawn();
+    if (state.hasProperty ("tape_drawn_curve"))
+    {
+        auto values = juce::StringArray::fromTokens (state.getProperty ("tape_drawn_curve").toString(), " ", "");
+        values.removeEmptyStrings();
+        if (values.size() == TapeStop::numDrawnPoints)
+            for (int i = 0; i < TapeStop::numDrawnPoints; ++i)
+                setTapeDrawnPoint (i, values[i].getFloatValue());
+    }
+
+    // Older projects have no drawn curve: start from a straight rise.
+    resetFrazaCustom();
+    if (state.hasProperty ("fraza_custom"))
+    {
+        auto values = juce::StringArray::fromTokens (state.getProperty ("fraza_custom").toString(), " ", "");
+        values.removeEmptyStrings();
+        if (values.size() == Fraza::numCustomPoints)
+            for (int i = 0; i < Fraza::numCustomPoints; ++i)
+                setFrazaCustomPoint (i, values[i].getFloatValue());
+    }
 
     matrix.clearAll();
     int slot = 0;
