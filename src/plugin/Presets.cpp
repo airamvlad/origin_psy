@@ -477,7 +477,8 @@ void PresetManager::randomize (OriginPsyProcessor& p, bool mutateOnly, juce::Ran
         const auto& id = ranged->paramID;
         bool mine = false;
         for (const auto& prefix : active) mine = mine || id.startsWith (prefix);
-        if (! mine || id == params::tapeBrake || id == params::tapeTrigger || id == params::tapeDrawn) continue;
+        if (! mine || id == params::tapeBrake || id == params::tapeTrigger || id == params::tapeDrawn
+            || id == params::tapeCurve) continue;
 
         const bool isChoice = dynamic_cast<juce::AudioParameterChoice*> (ranged) != nullptr
                               || dynamic_cast<juce::AudioParameterBool*> (ranged) != nullptr;
@@ -565,6 +566,7 @@ bool PresetManager::loadFactory (int index)
     if (index < 0 || index >= (int) factory.size()) return false;
     resetToDefaults (proc);
     factory[(size_t) index].apply (proc);
+    proc.adoptTapeCurveKnob(); // factory presets set the slow down with the old Curve value
     proc.currentPresetName = factory[(size_t) index].name;
     return true;
 }

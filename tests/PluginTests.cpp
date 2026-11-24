@@ -314,6 +314,25 @@ void state()
                    && std::abs (d.getTapeDrawnPoint (10) - 0.3f) < 1e-3f, "state restores the drawn tape curve");
     }
 
+    // Projects from before: their Curve knob value becomes the drawn slow down.
+    {
+        OriginPsyProcessor c;
+        setValue (c, params::tapeCurve, 0.9f);
+        juce::MemoryBlock cd;
+        c.getStateInformation (cd);
+        auto xml = OriginPsyProcessor::getXmlFromBinary (cd.getData(), (int) cd.getSize());
+        xml->removeAttribute ("tape_drawn_curve");
+        juce::MemoryBlock old;
+        OriginPsyProcessor::copyXmlToBinary (*xml, old);
+        OriginPsyProcessor d;
+        d.setStateInformation (old.getData(), (int) old.getSize());
+        float expected[TapeStop::numDrawnPoints];
+        TapeStop::fillDrawnFromKnob (0.9f, expected);
+        bool same = true;
+        for (int i = 0; i < TapeStop::numDrawnPoints; ++i) same = same && std::abs (d.getTapeDrawnPoint (i) - expected[i]) < 1e-4f;
+        check (same, "old Curve knob value becomes the drawn tape curve");
+    }
+
     b.toggleGateStep (1, 0);
     check (b.getGatePattern (1) == 0xA5A4u, "clicking a step toggles it");
 }

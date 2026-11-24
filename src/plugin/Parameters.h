@@ -71,6 +71,7 @@ inline const juce::String tapeDrawn = "tape_drawn";
 inline const juce::String tapeDrive = "tape_drive";
 inline const juce::String tapeCrush = "tape_crush";
 inline const juce::String tapeFilter = "tape_filter";
+inline const juce::String tapeWobble = "tape_wobble";
 
 inline const juce::String ratchetRate = "ratchet_rate";
 inline const juce::String ratchetSteps = "ratchet_steps";
