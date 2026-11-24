@@ -96,6 +96,34 @@ void sampleRatesAndBlocks()
     check (healthy (out), "shorter blocks than announced work");
 }
 
+void globalDryWet()
+{
+    // Dry/Wet at 0: the input comes out untouched, also with a latent module in the chain.
+    for (bool withRatchet : { false, true })
+    {
+        OriginPsyProcessor p;
+        setValue (p, params::outMix, 0.0f);
+        setValue (p, params::outLimit, 0.0f);
+        if (withRatchet) setValue (p, params::slotModule (1), (float) ModuleType::spectralRatchet);
+        p.prepareToPlay (48000.0, 256);
+        p.prepareToPlay (48000.0, 256); // latency from the new layout
+        const auto out = run (p, 48000.0, 256, 24000);
+        const int latency = p.getLatencySamples();
+        check (withRatchet == (latency > 0), "latency follows the chain");
+        double phase = 0.0, worst = 0.0;
+        std::vector<float> in;
+        for (int i = 0; i < 24000; ++i)
+        {
+            in.push_back (0.5f * (float) (2.0 * phase - 1.0));
+            phase += 110.0 / 48000.0;
+            phase -= std::floor (phase);
+        }
+        for (int i = latency + 10; i < 24000; ++i)
+            worst = std::max (worst, (double) std::abs (out[(size_t) i] - in[(size_t) (i - latency)]));
+        check (worst < 1.0e-4, withRatchet ? "Dry/Wet 0 lines up with Spectral Ratchet latency" : "Dry/Wet 0 is the dry input");
+    }
+}
+
 void emptyChainIsTransparent()
 {
     OriginPsyProcessor p;
@@ -647,6 +675,7 @@ int main (int argc, char** argv)
     emptyChainIsTransparent();
     slotMixSoloAndLimiter();
     allModulesAndFraza();
+    globalDryWet();
     state();
     modulation();
     presets();

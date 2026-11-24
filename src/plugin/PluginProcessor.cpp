@@ -61,6 +61,9 @@ void OriginPsyProcessor::prepareToPlay (double sr, int samplesPerBlock)
     clock.reset();
     outGain.reset (sr, 0.02);
     limiter.prepare (sr);
+    dryWet.prepare (sr, SpectralRatchet::latency, std::max (1, samplesPerBlock));
+    dryWet.setMix (value (params::outMix));
+    dryWet.reset();
     outGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (value (params::outGain)));
     wantedLatency = Chain::latencyOf (chain.activeLayout());
     setLatencySamples (wantedLatency.load());
@@ -372,6 +375,12 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     computeModulation (t, fraza, left, right, numSamples, key);
     updateModules();
+
+    // Global Dry/Wet: keep the input (delayed by the chain's latency) to blend back in.
+    if (! dryWet.fits (numSamples)) dryWet.prepare (sampleRate, SpectralRatchet::latency, numSamples); // only if the host lied about the block size
+    dryWet.setMix (m (params::outMix)); // modulatable: e.g. Phrase can bring the effect in
+    dryWet.setDelay (wantedLatency.load());
+    dryWet.pushDry (left, right, numSamples);
     if (right == nullptr)
     {
         // Mono: run the stereo chain on a copy and fold it back.
@@ -385,6 +394,7 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     {
         chain.process (left, right, numSamples, t, key);
     }
+    dryWet.blend (left, right, numSamples);
 
     outGain.setTargetValue (juce::Decibels::decibelsToGain (value (params::outGain)));
     for (int n = 0; n < numSamples; ++n)

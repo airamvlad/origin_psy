@@ -379,7 +379,7 @@ private:
     originpsy::ui::FrazaStrip fraza;
     originpsy::ui::ModStrip modStrip;
     originpsy::ui::PresetBar presetBar;
-    originpsy::ui::Knob output;
+    originpsy::ui::Knob output, mix;
     juce::ToggleButton limit { "LIMIT" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> limitAttachment;
     juce::TooltipWindow tooltips { this, 700 };

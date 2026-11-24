@@ -1575,7 +1575,8 @@ void SlotCard::itemDropped (const SourceDetails& d)
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
       echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), tapePage (p), ratchetPage (p), fraza (p), modStrip (p), presetBar (p),
-      output (p.apvts, params::outGain, "Output", colours::cyan, true)
+      output (p.apvts, params::outGain, "Output", colours::cyan, true),
+      mix (p.apvts, params::outMix, "Dry/Wet", colours::cyan, true)
 {
     setLookAndFeel (&lnf);
     for (int i = 0; i < Chain::numSlots; ++i)
@@ -1594,6 +1595,7 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addAndMakeVisible (modStrip);
     addAndMakeVisible (presetBar);
     addAndMakeVisible (output);
+    addAndMakeVisible (mix);
     limit.setClickingTogglesState (true);
     limit.setColour (juce::ToggleButton::tickColourId, colours::cyan);
     limit.setTooltip ("Output limiter: nothing goes over the ceiling (Output Ceiling parameter, -0.3 dB by default)");
@@ -1680,7 +1682,8 @@ void OriginPsyEditor::resized()
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
-    place (presetBar, { 300, 14, 528, 30 });
+    place (presetBar, { 300, 14, 448, 30 });
+    place (mix, { 756, 4, 74, 48 });
     place (output, { 900, 4, 124, 48 });
     place (limit, { 836, 12, 58, 22 });
 }

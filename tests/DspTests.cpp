@@ -1,4 +1,5 @@
 #include "dsp/Chain.h"
+#include "dsp/DryWet.h"
 #include "dsp/Fraza.h"
 #include "dsp/Fft.h"
 #include "dsp/Modulation.h"
@@ -784,6 +785,37 @@ void ratchetTests()
     check (allFinite (xl) && allFinite (xr), "spectral ratchet stays bounded at extreme settings");
 }
 
+void dryWetTests()
+{
+    DryWet dw;
+    dw.prepare (48000.0, 8, 64);
+    dw.setMix (0.0f);
+    dw.reset();
+    dw.setDelay (3);
+    std::vector<float> in (200), l (64), r (64), out;
+    for (size_t i = 0; i < in.size(); ++i) in[i] = (float) i + 1.0f;
+    for (size_t start = 0; start < in.size(); start += 50)
+    {
+        const int n = (int) std::min<size_t> (50, in.size() - start);
+        std::copy (in.begin() + (long) start, in.begin() + (long) start + n, l.begin());
+        std::copy (l.begin(), l.begin() + n, r.begin());
+        dw.pushDry (l.data(), r.data(), n);
+        for (int i = 0; i < n; ++i) l[(size_t) i] = r[(size_t) i] = -100.0f; // the "effect"
+        dw.blend (l.data(), r.data(), n);
+        out.insert (out.end(), l.begin(), l.begin() + n);
+    }
+    bool delayed = out[0] == 0.0f && out[2] == 0.0f;
+    for (size_t i = 3; i < out.size(); ++i) delayed = delayed && out[i] == in[i - 3];
+    check (delayed, "dry is delayed by the chain latency at mix 0");
+
+    dw.setMix (1.0f);
+    dw.reset();
+    l.assign (64, 0.25f);
+    dw.pushDry (in.data(), nullptr, 64);
+    dw.blend (l.data(), nullptr, 64);
+    check (l[10] == 0.25f, "mix 1 is only the effect");
+}
+
 void modulationTests()
 {
     // LFO 1/4 rate: one cycle per quarter note, locked to the song position.
@@ -855,6 +887,7 @@ int main()
     scaleTests();
     euclidTests();
     frazaTests();
+    dryWetTests();
     echoTests();
     vokalTests();
     gateTests();

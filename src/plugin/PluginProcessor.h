@@ -2,6 +2,7 @@
 
 #include "Parameters.h"
 #include "dsp/Chain.h"
+#include "dsp/DryWet.h"
 #include "dsp/Fraza.h"
 #include "dsp/Limiter.h"
 #include "dsp/Modulation.h"
@@ -154,6 +155,7 @@ private:
     originpsy::EnvelopeFollower envelope, keyEnvelope;
     std::vector<float> keyScratch;
     originpsy::Limiter limiter;
+    originpsy::DryWet dryWet;
     std::vector<juce::RangedAudioParameter*> modParams;
     std::unordered_map<juce::String, int> modIndex;
     std::unique_ptr<std::atomic<float>[]> modNorm;

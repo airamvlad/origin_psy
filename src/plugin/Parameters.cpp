@@ -279,6 +279,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         layout.add (std::move (g));
     }
 
+    // Global Dry/Wet: added last so existing parameter order stays the same.
+    layout.add (percent (outMix, "Dry/Wet", 1.0f));
+
     return layout;
 }
 
