@@ -68,6 +68,13 @@ public:
     /** Straight rise from 0 to 1, the shape a new Custom curve starts with. */
     void resetFrazaCustom() noexcept;
 
+    // Hand-drawn Tape Stop slow down (speeds 1..0 over the length), used when
+    // Tape Drawn Curve is on. Saved with the project and presets.
+    float getTapeDrawnPoint (int i) const noexcept { return tapeDrawn[(size_t) i].load(); }
+    void setTapeDrawnPoint (int i, float v) noexcept;
+    /** Back to the default Curve knob shape. */
+    void resetTapeDrawn() noexcept;
+
     /** Sets the Fraza amounts to a ready made build-up (the Drop button). */
     void applyDropPreset();
 
@@ -98,6 +105,7 @@ public:
         std::atomic<float> frazaValue { 0.0f };
         std::atomic<double> bpm { 140.0 };
         std::atomic<float> limiterDb { 0.0f };
+        std::atomic<float> tapeFx { 0.0f };
         std::atomic<bool> hostPlaying { false };
         std::atomic<uint32_t> midiEvents { 0 };   // counts MIDI messages that did something
         std::atomic<bool> midiBrake { false };
@@ -163,6 +171,8 @@ private:
     std::array<std::atomic<uint32_t>, 3> gatePatterns { { 0x1111u, 0x15u, 0x1249u } };
     std::atomic<uint32_t> ratchetPattern { 0xEEEEu };
     std::array<std::atomic<float>, originpsy::Fraza::numCustomPoints> frazaCustom {};
+    std::array<std::atomic<float>, originpsy::TapeStop::numDrawnPoints> tapeDrawn {};
+    std::array<float, originpsy::TapeStop::numDrawnPoints> tapeDrawnBlock {}; // audio thread copy
     std::atomic<int> wantedLatency { 0 };
     void handleAsyncUpdate() override { setLatencySamples (wantedLatency.load()); }
 

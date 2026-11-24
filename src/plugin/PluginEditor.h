@@ -167,6 +167,87 @@ private:
     int trailPos = 0;
 };
 
+/** A curve of evenly spaced points (0..1) that is drawn with the mouse.
+    Shift-drag draws a straight line, right-click opens reset, smooth, flip,
+    reverse and clear. Subclasses say where the points live and paint them. */
+class CurveDrawer : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    CurveDrawer();
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { repaint(); }
+
+protected:
+    virtual int numPoints() const = 0;
+    virtual float getPoint (int i) const = 0;
+    virtual void setPoint (int i, float v) = 0;
+    /** Called before the first edit: switch to the drawn curve, copying the shape shown. */
+    virtual void beginDrawing() = 0;
+    /** The rectangle the curve spans: x = 0..1 across, value 1 at the top. */
+    virtual juce::Rectangle<float> curveArea() const = 0;
+    /** What "Reset" gives. */
+    virtual float defaultPoint (int i) const = 0;
+    virtual void addMenuItems (juce::PopupMenu&) {}
+    virtual void menuItemChosen (int) {}
+    /** The host should know the project changed (the points are not parameters). */
+    virtual void edited() = 0;
+
+    juce::Path pointsPath (const juce::Rectangle<float>& area) const;
+
+private:
+    std::vector<float> dragStart;
+    juce::Point<float> downPos, lastPos;
+    float toIndex (float x) const;
+    float toValue (float y) const;
+    void drawSegment (juce::Point<float> from, juce::Point<float> to);
+    void showMenu();
+};
+
+/** The phrase curve and where the song is in it. Drawing on it makes a
+    Custom curve, starting from the shape shown. */
+class PhraseView : public CurveDrawer
+{
+public:
+    explicit PhraseView (OriginPsyProcessor& p);
+    void paint (juce::Graphics&) override;
+
+private:
+    OriginPsyProcessor& proc;
+    juce::Rectangle<float> plotArea() const;
+    int numPoints() const override;
+    float getPoint (int i) const override;
+    void setPoint (int i, float v) override;
+    void beginDrawing() override;
+    juce::Rectangle<float> curveArea() const override;
+    float defaultPoint (int i) const override;
+    void edited() override;
+};
+
+/** Tape speed over the slow down. Drawing on it switches Tape Stop to the
+    drawn curve; the spin-up plays it backwards. */
+class TapeCurveView : public CurveDrawer
+{
+public:
+    explicit TapeCurveView (OriginPsyProcessor& p);
+    void paint (juce::Graphics&) override;
+
+private:
+    OriginPsyProcessor& proc;
+    bool drawnOn() const;
+    int numPoints() const override;
+    float getPoint (int i) const override;
+    void setPoint (int i, float v) override;
+    void beginDrawing() override;
+    juce::Rectangle<float> curveArea() const override;
+    float defaultPoint (int i) const override;
+    void addMenuItems (juce::PopupMenu&) override;
+    void menuItemChosen (int) override;
+    void edited() override;
+};
+
 class TapePage : public juce::Component
 {
 public:
@@ -179,8 +260,10 @@ private:
 
     OriginPsyProcessor& proc;
     Choice mode, trigger, length;
-    Knob curve, mix;
+    Knob curve, mix, drive, crush, filter;
     juce::TextButton brake { "BRAKE" };
+    TapeCurveView curveView;
+    juce::Rectangle<float> fxCaption;
     float reelAngle = 0.0f;
 };
 
@@ -231,36 +314,6 @@ private:
     OriginPsyProcessor& proc;
     std::vector<std::unique_ptr<Column>> columns;
     Knob low, high, mix;
-};
-
-/** The phrase curve and where the song is in it. Drawing on it makes a
-    Custom curve (starting from the shape shown). Shift-drag draws a straight
-    line, right-click opens a menu with reset, smooth and flip. */
-class PhraseView : public juce::Component, public juce::SettableTooltipClient
-{
-public:
-    explicit PhraseView (OriginPsyProcessor& p);
-    void paint (juce::Graphics&) override;
-    void mouseDown (const juce::MouseEvent&) override;
-    void mouseDrag (const juce::MouseEvent&) override;
-    void mouseUp (const juce::MouseEvent&) override;
-    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
-    void mouseExit (const juce::MouseEvent&) override { repaint(); }
-
-private:
-    OriginPsyProcessor& proc;
-    using Points = std::array<float, originpsy::Fraza::numCustomPoints>;
-    Points dragStart {};
-    juce::Point<float> downPos, lastPos;
-
-    juce::Rectangle<float> plotArea() const;
-    float pointToIndex (float x) const;
-    float pointToValue (float y) const;
-    /** Switches the Curve to Custom, first copying the ready-made shape. */
-    void makeCustom();
-    void drawSegment (juce::Point<float> from, juce::Point<float> to);
-    void showMenu();
-    void finishEdit();
 };
 
 class FrazaStrip : public juce::Component

@@ -33,7 +33,36 @@ public:
         int length = 3;         // index into lengths: how long the slow down takes
         float curve = 0.5f;     // 0 = falls fast then lingers, 1 = holds speed then drops late
         float mix = 1.0f;
+        // Hand-drawn slow down instead of the Curve knob: numDrawnPoints speeds
+        // (1 = full speed) from the start of the slow down to its end. Spin-ups
+        // play it backwards. Null = use the knob.
+        const float* drawn = nullptr;
+        // Extra effects heard only while the tape is stopping, stopped or
+        // spinning up; they cut out the moment the stop ends. 0 = off.
+        float drive = 0.0f;     // tape saturation
+        float crush = 0.0f;     // fewer bits and a lower sample rate
+        float filter = 0.0f;    // low pass that closes as the tape slows
     };
+
+    static constexpr int numDrawnPoints = 64;
+
+    /** The knob's slow-down shape as speeds 0..1 over the length, so a drawn
+        curve can start from it. */
+    static void fillDrawnFromKnob (float curve, float* points) noexcept
+    {
+        const double shape = 0.35 + 2.65 * std::clamp ((double) curve, 0.0, 1.0);
+        for (int i = 0; i < numDrawnPoints; ++i)
+            points[i] = (float) (1.0 - std::pow ((double) i / (numDrawnPoints - 1), shape));
+    }
+
+    /** Drawn speed at a position 0..1 of the slow down. */
+    static float drawnAt (const float* points, double x) noexcept
+    {
+        const double pos = std::clamp (x, 0.0, 1.0) * (numDrawnPoints - 1);
+        const int i = std::min ((int) pos, numDrawnPoints - 2);
+        const double frac = pos - i;
+        return std::clamp ((float) (points[i] + (points[i + 1] - points[i]) * frac), 0.0f, 1.0f);
+    }
 
     static constexpr double maxLagSeconds = 12.0;
 
@@ -43,6 +72,7 @@ public:
         for (auto& d : lines) d.prepare ((int) (sampleRate * maxLagSeconds) + 16);
         xfadeSamples = std::max (1, (int) (0.02 * sr));
         mixSmooth.prepare (sr, 0.02);
+        fxGateSmooth.prepare (sr, 0.003);
         reset();
     }
 
@@ -56,6 +86,10 @@ public:
         xfade = 0;
         engaged = false;
         mixSmooth.reset (params.mix);
+        fxGateSmooth.reset (0.0f);
+        lp1 = lp2 = {};
+        crushHold = {};
+        crushCount = 0;
     }
 
     void setParams (const Params& p) noexcept { params = p; }
@@ -63,6 +97,8 @@ public:
     /** Playback speed now, 0..1 (for the display). */
     float getSpeed() const noexcept { return speed; }
     bool isActive() const noexcept { return stage != live; }
+    /** How much of the extra effects is heard now, 0..1 (for the display). */
+    float getFxAmount() const noexcept { return fxGateSmooth.current(); }
 
     /** Whether the song position asks for the effect (auto triggers). */
     static bool autoEngaged (const Params& p, double ppq, double beatsPerBar) noexcept
@@ -91,6 +127,11 @@ public:
         const float holdSpeed = params.mode == slowDown ? 0.5f : 0.0f;
         const double maxLag = sr * maxLagSeconds - 8.0;
         mixSmooth.setTarget (std::clamp (params.mix, 0.0f, 1.0f));
+        const bool anyFx = params.drive > 0.001f || params.crush > 0.001f || params.filter > 0.001f;
+        const float driveGain = 1.0f + 24.0f * params.drive * params.drive;
+        const float driveNorm = 1.0f / std::tanh (driveGain);
+        const float crushSteps = std::pow (2.0f, 15.0f - 11.0f * std::clamp (params.crush, 0.0f, 1.0f));
+        const int crushHoldLen = 1 + (int) (std::clamp (params.crush, 0.0f, 1.0f) * 15.0f * (float) (sr / 48000.0));
 
         for (int n = 0; n < numSamples; ++n)
         {
@@ -108,13 +149,17 @@ public:
             {
                 case slowing:
                     rampPos = std::min (1.0, rampPos + rampStep);
-                    speed = holdSpeed + (1.0f - holdSpeed) * (float) (1.0 - std::pow (rampPos, shape));
+                    speed = holdSpeed + (1.0f - holdSpeed)
+                                * (params.drawn != nullptr ? drawnAt (params.drawn, rampPos)
+                                                           : (float) (1.0 - std::pow (rampPos, shape)));
                     if (rampPos >= 1.0) stage = held;
                     break;
-                case held: speed = holdSpeed; break;
+                case held: speed = holdSpeed + (1.0f - holdSpeed) * drawnEnd(); break;
                 case spinningUp:
                     rampPos = std::min (1.0, rampPos + rampStep);
-                    speed = holdSpeed + (1.0f - holdSpeed) * (float) std::pow (rampPos, 1.0 / shape);
+                    speed = holdSpeed + (1.0f - holdSpeed)
+                                * (params.drawn != nullptr ? drawnAt (params.drawn, 1.0 - rampPos)
+                                                           : (float) std::pow (rampPos, 1.0 / shape));
                     if (rampPos >= 1.0) { speed = 1.0f; stage = catchingUp; xfade = 0; }
                     break;
                 case catchingUp:
@@ -142,6 +187,42 @@ public:
                     wetR = wetR * (1.0f - x) + inR * x;
                     if (xfade >= xfadeSamples) { stage = live; lag = 0.0; }
                 }
+            }
+
+            // Extra effects, only while the stop is happening.
+            const float fxGate = fxGateSmooth.next (stage == slowing || stage == held || stage == spinningUp ? 1.0f : 0.0f);
+            if (anyFx && fxGate > 0.0001f)
+            {
+                float fx[2] = { wetL, wetR };
+                // Low pass from about 18 kHz down to 200 Hz as the speed falls.
+                const double cutoff = 18000.0 * std::pow (200.0 / 18000.0, (double) params.filter * (1.0 - (double) speed));
+                const float a = (float) (1.0 - std::exp (-twoPi * std::min (cutoff, 0.45 * sr) / sr));
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    float x = fx[ch];
+                    if (params.drive > 0.001f) x = std::tanh (x * driveGain) * driveNorm;
+                    if (params.crush > 0.001f)
+                    {
+                        if (crushCount == 0) crushHold[(size_t) ch] = std::round (x * crushSteps) / crushSteps;
+                        x = crushHold[(size_t) ch];
+                    }
+                    if (params.filter > 0.001f)
+                    {
+                        lp1[(size_t) ch] += a * (x - lp1[(size_t) ch]);
+                        lp2[(size_t) ch] += a * (lp1[(size_t) ch] - lp2[(size_t) ch]);
+                        x = lp2[(size_t) ch];
+                    }
+                    fx[ch] = x;
+                }
+                crushCount = (crushCount + 1) % crushHoldLen;
+                wetL += (fx[0] - wetL) * fxGate;
+                wetR += (fx[1] - wetR) * fxGate;
+            }
+            else
+            {
+                // Keep the filter following the signal so it starts clean next time.
+                lp1 = lp2 = { wetL, wetR };
+                crushCount = 0;
             }
 
             const float m = mixSmooth.next();
@@ -174,7 +255,7 @@ private:
             {
                 // Pressed again while spinning up: slow down from the speed it has now.
                 stage = slowing;
-                rampPos = speedToRamp (speed);
+                rampPos = params.drawn != nullptr ? 1.0 - rampPos : speedToRamp (speed);
             }
             return;
         }
@@ -190,10 +271,18 @@ private:
             else
             {
                 // Spin up from the speed it has now.
-                const float holdSpeed = params.mode == slowDown ? 0.5f : 0.0f;
-                const double shape = 0.35 + 2.65 * std::clamp ((double) params.curve, 0.0, 1.0);
-                const double frac = std::clamp ((double) ((speed - holdSpeed) / (1.0f - holdSpeed)), 0.0, 1.0);
-                rampPos = std::pow (frac, shape);
+                if (params.drawn != nullptr)
+                {
+                    // The spin-up plays the drawing backwards: continue from the same point.
+                    rampPos = 1.0 - rampPos;
+                }
+                else
+                {
+                    const float holdSpeed = params.mode == slowDown ? 0.5f : 0.0f;
+                    const double shape = 0.35 + 2.65 * std::clamp ((double) params.curve, 0.0, 1.0);
+                    const double frac = std::clamp ((double) ((speed - holdSpeed) / (1.0f - holdSpeed)), 0.0, 1.0);
+                    rampPos = std::pow (frac, shape);
+                }
                 stage = spinningUp;
             }
         }
@@ -208,6 +297,8 @@ private:
         return std::pow (frac, 1.0 / shape);
     }
 
+    float drawnEnd() const noexcept { return params.drawn != nullptr ? drawnAt (params.drawn, 1.0) : 0.0f; }
+
     Params params;
     double sr = 48000.0;
     std::array<DelayLine, 2> lines;
@@ -217,6 +308,18 @@ private:
     int xfade = 0, xfadeSamples = 960;
     bool engaged = false;
     Smoother mixSmooth;
+
+    /** Smoother with the target given per sample. */
+    struct Gate
+    {
+        void prepare (double sampleRate, double seconds) noexcept { coeff = (float) std::exp (-1.0 / (seconds * sampleRate)); }
+        void reset (float v) noexcept { value = v; }
+        float next (float target) noexcept { value = target + coeff * (value - target); return value; }
+        float current() const noexcept { return value; }
+        float coeff = 0.0f, value = 0.0f;
+    } fxGateSmooth;
+    std::array<float, 2> lp1 {}, lp2 {}, crushHold {};
+    int crushCount = 0;
 };
 
 } // namespace originpsy

@@ -261,6 +261,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (choice (tapeLength, "Tape Length", lengthNames, 3));
         g->addChild (percent (tapeCurve, "Tape Curve", 0.5f));
         g->addChild (percent (tapeMix, "Tape Mix", 1.0f));
+        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { tapeDrawn, 1 }, "Tape Drawn Curve", false));
+        g->addChild (percent (tapeDrive, "Tape Stop Drive", 0.0f));
+        g->addChild (percent (tapeCrush, "Tape Stop Crush", 0.0f));
+        g->addChild (percent (tapeFilter, "Tape Stop Filter", 0.0f));
         layout.add (std::move (g));
     }
 

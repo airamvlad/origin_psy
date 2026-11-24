@@ -12,6 +12,7 @@ OriginPsyProcessor::OriginPsyProcessor()
       apvts (*this, nullptr, "OriginPsy", params::createLayout())
 {
     resetFrazaCustom();
+    resetTapeDrawn();
     for (auto* p : getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
             if (params::isModulatable (*ranged))
@@ -226,6 +227,14 @@ void OriginPsyProcessor::updateModules()
     tp.length = (int) m (params::tapeLength);
     tp.curve = m (params::tapeCurve);
     tp.mix = m (params::tapeMix);
+    tp.drive = m (params::tapeDrive);
+    tp.crush = m (params::tapeCrush);
+    tp.filter = m (params::tapeFilter);
+    if (value (params::tapeDrawn) > 0.5f)
+    {
+        for (size_t i = 0; i < tapeDrawnBlock.size(); ++i) tapeDrawnBlock[i] = tapeDrawn[i].load (std::memory_order_relaxed);
+        tp.drawn = tapeDrawnBlock.data();
+    }
     chain.tape.setParams (tp);
 
     // Spectral Ratchet.
@@ -421,6 +430,7 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.vokalAccent = chain.vokal.getAccent();
     for (int b = 0; b < 3; ++b) meters.gateStep[(size_t) b] = chain.gate.getStep (b);
     meters.tapeSpeed = chain.tape.getSpeed();
+    meters.tapeFx = chain.tape.getFxAmount();
     meters.ratchetStep = chain.ratchet.getStep();
     meters.ratchetFreezing = chain.ratchet.isFreezing();
     for (size_t b = 0; b < meters.ratchetBands.size(); ++b)
@@ -456,6 +466,18 @@ void OriginPsyProcessor::resetFrazaCustom() noexcept
 {
     for (int i = 0; i < Fraza::numCustomPoints; ++i)
         frazaCustom[(size_t) i] = (float) i / (float) (Fraza::numCustomPoints - 1);
+}
+
+void OriginPsyProcessor::setTapeDrawnPoint (int i, float v) noexcept
+{
+    if (i >= 0 && i < TapeStop::numDrawnPoints) tapeDrawn[(size_t) i] = juce::jlimit (0.0f, 1.0f, v);
+}
+
+void OriginPsyProcessor::resetTapeDrawn() noexcept
+{
+    std::array<float, TapeStop::numDrawnPoints> pts;
+    TapeStop::fillDrawnFromKnob (0.5f, pts.data());
+    for (size_t i = 0; i < pts.size(); ++i) tapeDrawn[i] = pts[i];
 }
 
 void OriginPsyProcessor::setGatePattern (int band, uint32_t pattern)
@@ -518,6 +540,9 @@ juce::ValueTree OriginPsyProcessor::createStateTree()
     juce::StringArray custom;
     for (const auto& v : frazaCustom) custom.add (juce::String (v.load(), 4));
     state.setProperty ("fraza_custom", custom.joinIntoString (" "), nullptr);
+    juce::StringArray tape;
+    for (const auto& v : tapeDrawn) tape.add (juce::String (v.load(), 4));
+    state.setProperty ("tape_drawn_curve", tape.joinIntoString (" "), nullptr);
     state.setProperty ("version", JucePlugin_VersionString, nullptr);
     state.setProperty ("preset_name", currentPresetName, nullptr);
 
@@ -554,6 +579,16 @@ void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
     if (state.hasProperty ("ratchet_pattern"))
         ratchetPattern = (uint32_t) (juce::int64) state.getProperty ("ratchet_pattern") & 0xffffu;
     currentPresetName = state.getProperty ("preset_name", "Init").toString();
+
+    resetTapeDrawn();
+    if (state.hasProperty ("tape_drawn_curve"))
+    {
+        auto values = juce::StringArray::fromTokens (state.getProperty ("tape_drawn_curve").toString(), " ", "");
+        values.removeEmptyStrings();
+        if (values.size() == TapeStop::numDrawnPoints)
+            for (int i = 0; i < TapeStop::numDrawnPoints; ++i)
+                setTapeDrawnPoint (i, values[i].getFloatValue());
+    }
 
     // Older projects have no drawn curve: start from a straight rise.
     resetFrazaCustom();

@@ -584,6 +584,59 @@ void orbitTests()
     check (err < 1.0e-6, "orbit with mix 0 is a null test");
 }
 
+void tapeExtrasTests()
+{
+    const size_t sec = (size_t) sr;
+    auto runBrake = [&] (TapeStop::Params p, std::vector<float>& l, std::vector<float>& r, size_t on, size_t off) {
+        TapeStop t;
+        t.prepare (sr, 256);
+        t.setParams (p);
+        t.reset();
+        for (size_t s = 0; s < l.size(); s += 256)
+        {
+            p.brake = s >= on && s < off;
+            t.setParams (p);
+            const int n = (int) std::min<size_t> (256, l.size() - s);
+            t.process (l.data() + s, r.data() + s, n, transportAt (120.0, 0.0));
+        }
+    };
+
+    // Extra effects: silent while live, heard while stopping, gone right after.
+    TapeStop::Params p;
+    p.mode = TapeStop::stop;
+    p.length = 3; // 1 s
+    auto cl = sine (1000.0, sec * 3), cr = cl, fl = cl, fr = cl;
+    runBrake (p, cl, cr, sec / 2, sec * 2);
+    p.drive = 1.0f;
+    p.crush = 0.7f;
+    p.filter = 0.8f;
+    runBrake (p, fl, fr, sec / 2, sec * 2);
+    double before = 0.0, during = 0.0, after = 0.0;
+    for (size_t i = 0; i < sec / 2; ++i) before = std::max (before, (double) std::abs (fl[i] - cl[i]));
+    for (size_t i = sec * 6 / 10; i < sec; ++i) during = std::max (during, (double) std::abs (fl[i] - cl[i]));
+    for (size_t i = sec * 2 + (size_t) (0.03 * sr); i < sec * 3; ++i) after = std::max (after, (double) std::abs (fl[i] - cl[i]));
+    check (before < 1.0e-6, "stop effects are off before the stop");
+    check (during > 0.05, "stop effects are heard while the tape stops");
+    check (after < 1.0e-6, "stop effects end when the stop ends");
+    check (allFinite (fl), "stop effects output is finite");
+
+    // Drawn curve: a flat line at half speed holds an octave down.
+    float drawn[TapeStop::numDrawnPoints];
+    for (auto& v : drawn) v = 0.5f;
+    TapeStop::Params d;
+    d.mode = TapeStop::stop;
+    d.length = 2;
+    d.drawn = drawn;
+    auto dl = sine (1000.0, sec * 2), dr = dl;
+    runBrake (d, dl, dr, 0, sec * 2);
+    check (std::abs (crossingRate (dl, sec / 10, sec * 4 / 10) - 500.0) < 15.0, "drawn curve sets the tape speed");
+    check (std::abs (crossingRate (dl, sec, sec * 2) - 500.0) < 15.0, "drawn curve end is held");
+
+    float knobShape[TapeStop::numDrawnPoints];
+    TapeStop::fillDrawnFromKnob (0.5f, knobShape);
+    check (knobShape[0] == 1.0f && knobShape[TapeStop::numDrawnPoints - 1] == 0.0f, "knob shape runs from full speed to stop");
+}
+
 void tapeTests()
 {
     // Manual brake, Stop mode, 1/2 note (1 s at 120 BPM).
@@ -896,6 +949,7 @@ int main()
     zapTests();
     orbitTests();
     tapeTests();
+    tapeExtrasTests();
     sidechainTests();
     ratchetTests();
     performanceTest();

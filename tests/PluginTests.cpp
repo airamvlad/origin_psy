@@ -301,6 +301,19 @@ void state()
         check (std::abs (d.getFrazaCustomPoint (Fraza::numCustomPoints / 2) - 0.5f) < 0.01f, "old projects get a straight rise");
     }
 
+    // The drawn Tape Stop curve too.
+    {
+        OriginPsyProcessor c;
+        setValue (c, params::tapeDrawn, 1.0f);
+        for (int i = 0; i < TapeStop::numDrawnPoints; ++i) c.setTapeDrawnPoint (i, 0.3f);
+        juce::MemoryBlock cd;
+        c.getStateInformation (cd);
+        OriginPsyProcessor d;
+        d.setStateInformation (cd.getData(), (int) cd.getSize());
+        check (d.apvts.getRawParameterValue (params::tapeDrawn)->load() > 0.5f
+                   && std::abs (d.getTapeDrawnPoint (10) - 0.3f) < 1e-3f, "state restores the drawn tape curve");
+    }
+
     b.toggleGateStep (1, 0);
     check (b.getGatePattern (1) == 0xA5A4u, "clicking a step toggles it");
 }
