@@ -11,6 +11,7 @@ OriginPsyProcessor::OriginPsyProcessor()
                           .withInput ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "OriginPsy", params::createLayout())
 {
+    resetFrazaCustom();
     for (auto* p : getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
             if (params::isModulatable (*ranged))
@@ -357,6 +358,12 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     fp.bars = barsChoice == 0 ? 8 : (barsChoice == 1 ? 16 : 32);
     fp.offset = (int) value (params::frazaOffset);
     fp.curve = (int) value (params::frazaCurve);
+    std::array<float, Fraza::numCustomPoints> customPoints;
+    if (fp.curve == Fraza::custom)
+    {
+        getFrazaCustom (customPoints.data());
+        fp.customPoints = customPoints.data();
+    }
     const double phrasePos = Fraza::phrasePosition (fp, t.ppqAtBlockStart, t.beatsPerBar);
     const float fraza = value (params::frazaOn) > 0.5f ? Fraza::evaluate (fp, phrasePos) : 0.0f;
 
@@ -420,6 +427,27 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.hostPlaying = t.playing;
 }
 
+void OriginPsyProcessor::setFrazaCustomPoint (int i, float v) noexcept
+{
+    if (i >= 0 && i < Fraza::numCustomPoints) frazaCustom[(size_t) i] = juce::jlimit (0.0f, 1.0f, v);
+}
+
+void OriginPsyProcessor::getFrazaCustom (float* out) const noexcept
+{
+    for (int i = 0; i < Fraza::numCustomPoints; ++i) out[i] = frazaCustom[(size_t) i].load();
+}
+
+void OriginPsyProcessor::setFrazaCustom (const float* in) noexcept
+{
+    for (int i = 0; i < Fraza::numCustomPoints; ++i) setFrazaCustomPoint (i, in[i]);
+}
+
+void OriginPsyProcessor::resetFrazaCustom() noexcept
+{
+    for (int i = 0; i < Fraza::numCustomPoints; ++i)
+        frazaCustom[(size_t) i] = (float) i / (float) (Fraza::numCustomPoints - 1);
+}
+
 void OriginPsyProcessor::setGatePattern (int band, uint32_t pattern)
 {
     if (band >= 0 && band < 3) gatePatterns[(size_t) band] = pattern;
@@ -477,6 +505,9 @@ juce::ValueTree OriginPsyProcessor::createStateTree()
     for (int b = 0; b < 3; ++b)
         state.setProperty ("gate_pattern_" + juce::String (b + 1), (juce::int64) gatePatterns[(size_t) b].load(), nullptr);
     state.setProperty ("ratchet_pattern", (juce::int64) ratchetPattern.load(), nullptr);
+    juce::StringArray custom;
+    for (const auto& v : frazaCustom) custom.add (juce::String (v.load(), 4));
+    state.setProperty ("fraza_custom", custom.joinIntoString (" "), nullptr);
     state.setProperty ("version", JucePlugin_VersionString, nullptr);
     state.setProperty ("preset_name", currentPresetName, nullptr);
 
@@ -513,6 +544,17 @@ void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
     if (state.hasProperty ("ratchet_pattern"))
         ratchetPattern = (uint32_t) (juce::int64) state.getProperty ("ratchet_pattern") & 0xffffu;
     currentPresetName = state.getProperty ("preset_name", "Init").toString();
+
+    // Older projects have no drawn curve: start from a straight rise.
+    resetFrazaCustom();
+    if (state.hasProperty ("fraza_custom"))
+    {
+        auto values = juce::StringArray::fromTokens (state.getProperty ("fraza_custom").toString(), " ", "");
+        values.removeEmptyStrings();
+        if (values.size() == Fraza::numCustomPoints)
+            for (int i = 0; i < Fraza::numCustomPoints; ++i)
+                setFrazaCustomPoint (i, values[i].getFloatValue());
+    }
 
     matrix.clearAll();
     int slot = 0;

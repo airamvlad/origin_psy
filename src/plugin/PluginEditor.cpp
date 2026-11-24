@@ -1045,17 +1045,156 @@ void GatePage::resized()
 }
 
 //==============================================================================
+PhraseView::PhraseView (OriginPsyProcessor& p) : proc (p)
+{
+    setMouseCursor (juce::MouseCursor::CrosshairCursor);
+    setTooltip ("Draw on the curve to make your own (Custom). Shift-drag: straight line. Right-click: reset, smooth, flip");
+}
+
+juce::Rectangle<float> PhraseView::plotArea() const
+{
+    return getLocalBounds().toFloat().reduced (8.0f, 10.0f);
+}
+
+float PhraseView::pointToIndex (float x) const
+{
+    const auto r = plotArea();
+    return juce::jlimit (0.0f, 1.0f, (x - r.getX()) / r.getWidth()) * (float) (Fraza::numCustomPoints - 1);
+}
+
+float PhraseView::pointToValue (float y) const
+{
+    const auto r = plotArea();
+    return juce::jlimit (0.0f, 1.0f, (r.getBottom() - 12.0f - y) / (r.getHeight() - 14.0f));
+}
+
+void PhraseView::makeCustom()
+{
+    auto* param = proc.apvts.getParameter (params::frazaCurve);
+    const int current = (int) proc.apvts.getRawParameterValue (params::frazaCurve)->load();
+    if (current == Fraza::custom) return;
+
+    Fraza::Params fp;
+    const int barsChoice = (int) proc.apvts.getRawParameterValue (params::frazaBars)->load();
+    fp.bars = barsChoice == 0 ? 8 : (barsChoice == 1 ? 16 : 32);
+    fp.curve = current;
+    Points pts {};
+    Fraza::fillCustomFrom (fp, pts.data());
+    proc.setFrazaCustom (pts.data());
+
+    param->beginChangeGesture();
+    param->setValueNotifyingHost (param->convertTo0to1 ((float) Fraza::custom));
+    param->endChangeGesture();
+}
+
+void PhraseView::drawSegment (juce::Point<float> from, juce::Point<float> to)
+{
+    float i0 = pointToIndex (from.x), i1 = pointToIndex (to.x);
+    float v0 = pointToValue (from.y), v1 = pointToValue (to.y);
+    if (i0 > i1) { std::swap (i0, i1); std::swap (v0, v1); }
+    const int a = juce::roundToInt (i0), b = juce::roundToInt (i1);
+    for (int i = a; i <= b; ++i)
+    {
+        const float t = i1 - i0 < 1.0e-4f ? 1.0f : juce::jlimit (0.0f, 1.0f, ((float) i - i0) / (i1 - i0));
+        proc.setFrazaCustomPoint (i, v0 + (v1 - v0) * t);
+    }
+}
+
+void PhraseView::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu()) { showMenu(); return; }
+    makeCustom();
+    for (int i = 0; i < Fraza::numCustomPoints; ++i) dragStart[(size_t) i] = proc.getFrazaCustomPoint (i);
+    downPos = lastPos = e.position;
+    drawSegment (e.position, e.position);
+    repaint();
+}
+
+void PhraseView::mouseDrag (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu()) return;
+    if (e.mods.isShiftDown())
+    {
+        // Straight line from where the drag started; the rest stays as it was.
+        proc.setFrazaCustom (dragStart.data());
+        drawSegment (downPos, e.position);
+    }
+    else
+    {
+        drawSegment (lastPos, e.position);
+    }
+    lastPos = e.position;
+    repaint();
+}
+
+void PhraseView::mouseUp (const juce::MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu()) finishEdit();
+}
+
+void PhraseView::finishEdit()
+{
+    // The drawn curve is not a host parameter: tell the host the project changed.
+    proc.updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
+    repaint();
+}
+
+void PhraseView::showMenu()
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("Custom curve");
+    m.addItem (1, "Start from the current shape");
+    m.addItem (2, "Reset to straight rise");
+    m.addItem (3, "Smooth");
+    m.addItem (4, "Flip up/down");
+    m.addItem (5, "Reverse (back to front)");
+    m.addItem (6, "Clear (flat at zero)");
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this] (int choice) {
+        if (choice <= 0) return;
+        makeCustom(); // copies a ready-made shape first, so every item works on what is shown
+        Points pts {};
+        proc.getFrazaCustom (pts.data());
+        const int n = Fraza::numCustomPoints;
+        switch (choice)
+        {
+            case 2: for (int i = 0; i < n; ++i) pts[(size_t) i] = (float) i / (float) (n - 1); break;
+            case 3:
+            {
+                auto src = pts;
+                for (int i = 0; i < n; ++i)
+                {
+                    float sum = 0.0f; int count = 0;
+                    for (int k = -3; k <= 3; ++k)
+                        if (i + k >= 0 && i + k < n) { sum += src[(size_t) (i + k)]; ++count; }
+                    pts[(size_t) i] = sum / (float) count;
+                }
+                break;
+            }
+            case 4: for (auto& v : pts) v = 1.0f - v; break;
+            case 5: std::reverse (pts.begin(), pts.end()); break;
+            case 6: pts.fill (0.0f); break;
+            default: break;
+        }
+        proc.setFrazaCustom (pts.data());
+        finishEdit();
+    });
+}
+
 void PhraseView::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     g.setColour (colours::panelLight);
     g.fillRoundedRectangle (r, 6.0f);
-    r = r.reduced (8.0f, 10.0f);
+    r = plotArea();
 
     Fraza::Params fp;
     const int barsChoice = (int) proc.apvts.getRawParameterValue (params::frazaBars)->load();
     fp.bars = barsChoice == 0 ? 8 : (barsChoice == 1 ? 16 : 32);
     fp.curve = (int) proc.apvts.getRawParameterValue (params::frazaCurve)->load();
+    Points custom {};
+    proc.getFrazaCustom (custom.data());
+    fp.customPoints = custom.data();
+    const bool isCustom = fp.curve == Fraza::custom;
 
     g.setColour (colours::outline);
     for (int bar = 0; bar <= fp.bars; ++bar)
@@ -1064,24 +1203,42 @@ void PhraseView::paint (juce::Graphics& g)
         g.drawVerticalLine ((int) x, r.getBottom() - (bar % 4 == 0 ? 10.0f : 5.0f), r.getBottom());
     }
 
+    const float baseY = r.getBottom() - 12.0f;
     juce::Path curve;
     for (int i = 0; i <= 200; ++i)
     {
         const double pos = i / 200.0;
-        const float v = Fraza::evaluate (fp, std::min (pos, 0.99999));
+        const float v = Fraza::evaluate (fp, isCustom ? pos : std::min (pos, 0.99999));
         const float x = r.getX() + r.getWidth() * (float) pos;
-        const float y = r.getBottom() - 12.0f - v * (r.getHeight() - 14.0f);
+        const float y = baseY - v * (r.getHeight() - 14.0f);
         if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
+    }
+    if (isCustom)
+    {
+        auto fill = curve;
+        fill.lineTo (r.getRight(), baseY);
+        fill.lineTo (r.getX(), baseY);
+        fill.closeSubPath();
+        g.setColour (colours::cyan.withAlpha (0.12f));
+        g.fillPath (fill);
     }
     g.setColour (colours::cyan);
     g.strokePath (curve, juce::PathStrokeType (2.0f));
+
+    if (isMouseOverOrDragging())
+    {
+        g.setColour (colours::dim);
+        g.setFont (juce::FontOptions (10.5f));
+        g.drawText (isCustom ? "draw  |  shift: line  |  right-click: menu" : "draw to edit this curve",
+                    r.withHeight (14.0f), juce::Justification::topLeft);
+    }
 
     const float x = r.getX() + r.getWidth() * (float) proc.meters.frazaPosition.load();
     g.setColour (colours::text.withAlpha (0.8f));
     g.drawVerticalLine ((int) x, r.getY(), r.getBottom());
     // Where the curve is now: this is the value the PHRASE source sends.
     const float now = proc.meters.frazaValue.load();
-    const float y = r.getBottom() - 12.0f - now * (r.getHeight() - 14.0f);
+    const float y = baseY - now * (r.getHeight() - 14.0f);
     g.setColour (colours::cyan);
     g.fillEllipse (juce::Rectangle<float> (9.0f, 9.0f).withCentre ({ x, y }));
     const float bar = (float) proc.meters.frazaPosition.load() * (float) fp.bars + 1.0f;

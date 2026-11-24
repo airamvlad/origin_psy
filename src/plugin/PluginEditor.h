@@ -233,14 +233,34 @@ private:
     Knob low, high, mix;
 };
 
-class PhraseView : public juce::Component
+/** The phrase curve and where the song is in it. Drawing on it makes a
+    Custom curve (starting from the shape shown). Shift-drag draws a straight
+    line, right-click opens a menu with reset, smooth and flip. */
+class PhraseView : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    explicit PhraseView (OriginPsyProcessor& p) : proc (p) {}
+    explicit PhraseView (OriginPsyProcessor& p);
     void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { repaint(); }
 
 private:
     OriginPsyProcessor& proc;
+    using Points = std::array<float, originpsy::Fraza::numCustomPoints>;
+    Points dragStart {};
+    juce::Point<float> downPos, lastPos;
+
+    juce::Rectangle<float> plotArea() const;
+    float pointToIndex (float x) const;
+    float pointToValue (float y) const;
+    /** Switches the Curve to Custom, first copying the ready-made shape. */
+    void makeCustom();
+    void drawSegment (juce::Point<float> from, juce::Point<float> to);
+    void showMenu();
+    void finishEdit();
 };
 
 class FrazaStrip : public juce::Component

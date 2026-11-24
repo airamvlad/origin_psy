@@ -555,6 +555,7 @@ void PresetManager::resetToDefaults (OriginPsyProcessor& p)
     p.setGatePattern (1, 0x15u);
     p.setGatePattern (2, 0x1249u);
     p.setRatchetPattern (0xEEEEu);
+    p.resetFrazaCustom();
 }
 
 bool PresetManager::loadFactory (int index)

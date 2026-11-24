@@ -58,6 +58,15 @@ public:
     void setRatchetPattern (uint32_t pattern) noexcept { ratchetPattern = pattern & 0xffffu; }
     void toggleRatchetStep (int step) noexcept { if (step >= 0 && step < 16) ratchetPattern ^= (1u << step); }
 
+    // Hand-drawn Phrase curve (the Custom curve). Not host parameters: saved
+    // with the project and with presets, like the gate patterns.
+    float getFrazaCustomPoint (int i) const noexcept { return frazaCustom[(size_t) i].load(); }
+    void setFrazaCustomPoint (int i, float v) noexcept;
+    void getFrazaCustom (float* out) const noexcept;
+    void setFrazaCustom (const float* in) noexcept;
+    /** Straight rise from 0 to 1, the shape a new Custom curve starts with. */
+    void resetFrazaCustom() noexcept;
+
     /** Sets the Fraza amounts to a ready made build-up (the Drop button). */
     void applyDropPreset();
 
@@ -151,6 +160,7 @@ private:
     std::vector<int> frazaTargetOf;
     std::array<std::atomic<uint32_t>, 3> gatePatterns { { 0x1111u, 0x15u, 0x1249u } };
     std::atomic<uint32_t> ratchetPattern { 0xEEEEu };
+    std::array<std::atomic<float>, originpsy::Fraza::numCustomPoints> frazaCustom {};
     std::atomic<int> wantedLatency { 0 };
     void handleAsyncUpdate() override { setLatencySamples (wantedLatency.load()); }
 

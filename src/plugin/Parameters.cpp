@@ -33,7 +33,7 @@ juce::StringArray moduleNames()
 
 juce::StringArray frazaCurveNames()
 {
-    return { "Rise", "Rise (late)", "Last bar", "Last 2 bars", "Last 4 bars", "Fall", "Every 4th bar" };
+    return { "Rise", "Rise (late)", "Last bar", "Last 2 bars", "Last 4 bars", "Fall", "Every 4th bar", "Custom" };
 }
 
 juce::StringArray lfoRateNames()

@@ -128,6 +128,32 @@ void frazaTests()
     // 7/8: a bar is 3.5 quarter notes.
     p.offset = 0;
     check (near (Fraza::phrasePosition (p, 3.5 * 8.0, 3.5), 0.5, 1e-9), "phrase follows odd meters");
+
+    // Hand-drawn curve: points joined by straight lines.
+    float pts[Fraza::numCustomPoints];
+    for (auto& v : pts) v = 0.0f;
+    pts[Fraza::numCustomPoints - 1] = 1.0f;
+    p.curve = Fraza::custom;
+    p.customPoints = pts;
+    check (Fraza::evaluate (p, 0.5) == 0.0f, "custom curve follows the drawn points");
+    check (near (Fraza::evaluate (p, 1.0 - 0.5 / (Fraza::numCustomPoints - 1)), 0.5, 1e-5),
+           "custom curve joins points with lines");
+    p.customPoints = nullptr;
+    check (near (Fraza::evaluate (p, 0.25), 0.25, 1e-6), "custom curve without points falls back to a rise");
+
+    // Starting a custom curve from a ready-made one keeps its shape.
+    Fraza::Params shape;
+    shape.bars = 16;
+    shape.curve = Fraza::riseExp;
+    Fraza::fillCustomFrom (shape, pts);
+    p.customPoints = pts;
+    for (double pos : { 0.1, 0.37, 0.5, 0.81 })
+        check (near (Fraza::evaluate (p, pos), Fraza::evaluate (shape, pos), 0.01), "custom copy matches the shape");
+
+    // The ready-made curves are unchanged.
+    shape.curve = Fraza::rise;       check (near (Fraza::evaluate (shape, 0.3), 0.3, 1e-6), "rise unchanged");
+    shape.curve = Fraza::fall;       check (near (Fraza::evaluate (shape, 0.3), 0.7, 1e-6), "fall unchanged");
+    shape.curve = Fraza::last4Bars;  check (near (Fraza::evaluate (shape, 14.0 / 16.0), 0.5, 1e-6), "last 4 bars unchanged");
 }
 
 //==============================================================================

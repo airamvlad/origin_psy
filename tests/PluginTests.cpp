@@ -245,6 +245,34 @@ void state()
     check ((int) b.apvts.getRawParameterValue (params::vokalVowel (9))->load() == 4, "state restores the vowel map");
     check (b.getGatePattern (1) == 0xA5A5u, "state restores drawn gate patterns");
 
+    // The hand-drawn Phrase curve is saved with the project.
+    {
+        OriginPsyProcessor c;
+        check (std::abs (c.getFrazaCustomPoint (Fraza::numCustomPoints - 1) - 1.0f) < 1e-6f
+                   && c.getFrazaCustomPoint (0) == 0.0f, "a new custom curve is a straight rise");
+        setValue (c, params::frazaCurve, (float) Fraza::custom);
+        for (int i = 0; i < Fraza::numCustomPoints; ++i) c.setFrazaCustomPoint (i, (i % 2) ? 0.8f : 0.2f);
+        juce::MemoryBlock cd;
+        c.getStateInformation (cd);
+        OriginPsyProcessor d;
+        d.setStateInformation (cd.getData(), (int) cd.getSize());
+        check ((int) d.apvts.getRawParameterValue (params::frazaCurve)->load() == Fraza::custom, "state restores Custom curve choice");
+        bool same = true;
+        for (int i = 0; i < Fraza::numCustomPoints; ++i)
+            same = same && std::abs (d.getFrazaCustomPoint (i) - ((i % 2) ? 0.8f : 0.2f)) < 1e-3f;
+        check (same, "state restores the drawn Phrase curve");
+
+        // Projects saved before the custom curve still load, with a straight rise.
+        data.reset();
+        a.getStateInformation (data);
+        auto xml = OriginPsyProcessor::getXmlFromBinary (data.getData(), (int) data.getSize());
+        xml->removeAttribute ("fraza_custom");
+        juce::MemoryBlock old;
+        OriginPsyProcessor::copyXmlToBinary (*xml, old);
+        d.setStateInformation (old.getData(), (int) old.getSize());
+        check (std::abs (d.getFrazaCustomPoint (Fraza::numCustomPoints / 2) - 0.5f) < 0.01f, "old projects get a straight rise");
+    }
+
     b.toggleGateStep (1, 0);
     check (b.getGatePattern (1) == 0xA5A4u, "clicking a step toggles it");
 }
