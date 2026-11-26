@@ -244,8 +244,6 @@ private:
     void beginDrawing() override;
     juce::Rectangle<float> curveArea() const override;
     float defaultPoint (int i) const override;
-    void addMenuItems (juce::PopupMenu&) override;
-    void menuItemChosen (int) override;
     void edited() override;
 };
 
@@ -261,7 +259,7 @@ private:
 
     OriginPsyProcessor& proc;
     Choice mode, trigger, length;
-    Knob curve, mix, drive, crush, filter;
+    Knob mix, drive, crush, filter, wobble;
     juce::TextButton brake { "BRAKE" };
     TapeCurveView curveView;
     juce::Rectangle<float> fxCaption;

@@ -620,6 +620,21 @@ void tapeExtrasTests()
     check (after < 1.0e-6, "stop effects end when the stop ends");
     check (allFinite (fl), "stop effects output is finite");
 
+    // Wobble: only while stopping as well.
+    TapeStop::Params w;
+    w.mode = TapeStop::slowDown;
+    w.length = 3;
+    auto wl0 = sine (1000.0, sec * 3), wr0 = wl0, wl = wl0, wr = wl0;
+    runBrake (w, wl0, wr0, sec / 2, sec * 3 / 2); // let go at 1.5 s: spun up again by 2.5 s
+    w.wobble = 1.0f;
+    runBrake (w, wl, wr, sec / 2, sec * 3 / 2);
+    double wBefore = 0.0, wDuring = 0.0, wAfter = 0.0;
+    for (size_t i = 0; i < sec / 2; ++i) wBefore = std::max (wBefore, (double) std::abs (wl[i] - wl0[i]));
+    for (size_t i = sec; i < sec * 3 / 2; ++i) wDuring = std::max (wDuring, (double) std::abs (wl[i] - wl0[i]));
+    for (size_t i = sec * 26 / 10; i < sec * 3; ++i) wAfter = std::max (wAfter, (double) std::abs (wl[i] - wl0[i]));
+    check (wBefore < 1.0e-6 && wAfter < 1.0e-6, "wobble is off outside the stop");
+    check (wDuring > 0.05, "wobble moves the pitch while stopping");
+
     // Drawn curve: a flat line at half speed holds an octave down.
     float drawn[TapeStop::numDrawnPoints];
     for (auto& v : drawn) v = 0.5f;

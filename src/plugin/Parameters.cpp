@@ -57,7 +57,7 @@ juce::StringArray glideDiveNames()
 bool isModulatable (const juce::RangedAudioParameter& p)
 {
     const auto& id = p.paramID;
-    if (id == outGain || id == outCeiling || id.startsWith ("macro") || id.startsWith ("fraza_to_") || id.startsWith ("lfo"))
+    if (id == outGain || id == outCeiling || id == tapeCurve || id.startsWith ("macro") || id.startsWith ("fraza_to_") || id.startsWith ("lfo"))
         return false;
     return dynamic_cast<const juce::AudioParameterFloat*> (&p) != nullptr
         || dynamic_cast<const juce::AudioParameterInt*> (&p) != nullptr;
@@ -266,12 +266,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (choice (tapeTrigger, "Tape Trigger", { "Brake button", "Every 2 bars", "Every 4 bars", "Every 8 bars", "Every 16 bars" }, 0));
         g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { tapeBrake, 1 }, "Tape Brake", false));
         g->addChild (choice (tapeLength, "Tape Length", lengthNames, 3));
-        g->addChild (percent (tapeCurve, "Tape Curve", 0.5f));
+        // The slow down is drawn now; this only converts older projects and presets.
+        g->addChild (percent (tapeCurve, "Tape Curve (old)", 0.5f));
         g->addChild (percent (tapeMix, "Tape Mix", 1.0f));
         g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { tapeDrawn, 1 }, "Tape Drawn Curve", false));
         g->addChild (percent (tapeDrive, "Tape Stop Drive", 0.0f));
         g->addChild (percent (tapeCrush, "Tape Stop Crush", 0.0f));
         g->addChild (percent (tapeFilter, "Tape Stop Filter", 0.0f));
+        g->addChild (percent (tapeWobble, "Tape Stop Wobble", 0.0f));
         layout.add (std::move (g));
     }
 

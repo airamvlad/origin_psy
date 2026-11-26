@@ -231,11 +231,10 @@ void OriginPsyProcessor::updateModules()
     tp.drive = m (params::tapeDrive);
     tp.crush = m (params::tapeCrush);
     tp.filter = m (params::tapeFilter);
-    if (value (params::tapeDrawn) > 0.5f)
-    {
-        for (size_t i = 0; i < tapeDrawnBlock.size(); ++i) tapeDrawnBlock[i] = tapeDrawn[i].load (std::memory_order_relaxed);
-        tp.drawn = tapeDrawnBlock.data();
-    }
+    tp.wobble = m (params::tapeWobble);
+    // The slow down is always the drawn curve (older settings are converted on load).
+    for (size_t i = 0; i < tapeDrawnBlock.size(); ++i) tapeDrawnBlock[i] = tapeDrawn[i].load (std::memory_order_relaxed);
+    tp.drawn = tapeDrawnBlock.data();
     chain.tape.setParams (tp);
 
     // Spectral Ratchet.
@@ -527,6 +526,14 @@ void OriginPsyProcessor::setTapeDrawnPoint (int i, float v) noexcept
     if (i >= 0 && i < TapeStop::numDrawnPoints) tapeDrawn[(size_t) i] = juce::jlimit (0.0f, 1.0f, v);
 }
 
+void OriginPsyProcessor::adoptTapeCurveKnob() noexcept
+{
+    if (value (params::tapeDrawn) > 0.5f) return; // already a drawn curve
+    std::array<float, TapeStop::numDrawnPoints> pts;
+    TapeStop::fillDrawnFromKnob (value (params::tapeCurve), pts.data());
+    for (size_t i = 0; i < pts.size(); ++i) tapeDrawn[i] = pts[i];
+}
+
 void OriginPsyProcessor::resetTapeDrawn() noexcept
 {
     std::array<float, TapeStop::numDrawnPoints> pts;
@@ -695,6 +702,8 @@ void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
     }
     state.removeChild (state.getChildWithName ("MODS"), nullptr);
     apvts.replaceState (state);
+    // Projects from before the drawn curve keep the slow down their Curve knob gave.
+    adoptTapeCurveKnob();
 }
 
 void OriginPsyProcessor::getStateInformation (juce::MemoryBlock& destData)

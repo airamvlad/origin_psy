@@ -714,15 +714,15 @@ TapePage::TapePage (OriginPsyProcessor& p)
       mode (p.apvts, params::tapeMode, "Mode"),
       trigger (p.apvts, params::tapeTrigger, "Trigger"),
       length (p.apvts, params::tapeLength, "Length"),
-      curve (p.apvts, params::tapeCurve, "Curve", colours::orange),
       mix (p.apvts, params::tapeMix, "Mix", colours::orange),
       drive (p.apvts, params::tapeDrive, "Drive", colours::magenta),
       crush (p.apvts, params::tapeCrush, "Crush", colours::magenta),
       filter (p.apvts, params::tapeFilter, "Filter", colours::magenta),
+      wobble (p.apvts, params::tapeWobble, "Wobble", colours::magenta),
       curveView (p)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &mode, &trigger, &length, &curve, &mix, &brake,
-                                                            &drive, &crush, &filter, &curveView })
+    for (auto* c : std::initializer_list<juce::Component*> { &mode, &trigger, &length, &mix, &brake,
+                                                            &drive, &crush, &filter, &wobble, &curveView })
         addAndMakeVisible (c);
     // Hold to brake; let go to come back.
     brake.setColour (juce::TextButton::buttonColourId, colours::orange.withAlpha (0.25f));
@@ -792,7 +792,7 @@ void TapePage::paint (juce::Graphics& g)
     // Caption over the stop-only effects.
     g.setColour (colours::magenta.withAlpha (0.4f + 0.6f * proc.meters.tapeFx.load()));
     g.setFont (juce::FontOptions (11.0f));
-    g.drawFittedText ("Drive, Crush, Filter:\nonly while stopping", fxCaption.toNearestInt(), juce::Justification::centredLeft, 3);
+    g.drawFittedText ("Effects below:\nonly while stopping", fxCaption.toNearestInt(), juce::Justification::centredLeft, 3);
     curveView.repaint();
 }
 
@@ -806,13 +806,13 @@ void TapePage::resized()
     length.setBounds (top.reduced (4, 0));
     r.removeFromTop (8);
     const int kh = r.getHeight() / 2, kw = r.getWidth() / 4;
-    curve.setBounds (r.getX(), r.getY(), kw, kh);
-    mix.setBounds (r.getX() + kw, r.getY(), kw, kh);
+    mix.setBounds (r.getX(), r.getY(), kw, kh);
+    fxCaption = juce::Rectangle<int> (r.getX() + kw + 6, r.getY(), kw, kh).toFloat();
     brake.setBounds (juce::Rectangle<int> (r.getX() + 2 * kw, r.getY(), 2 * kw, kh).reduced (14, 22));
-    fxCaption = juce::Rectangle<int> (r.getX() + 3 * kw, r.getY() + kh + 8, kw, kh - 24).toFloat();
     drive.setBounds (r.getX(), r.getY() + kh + 8, kw, kh - 8);
     crush.setBounds (r.getX() + kw, r.getY() + kh + 8, kw, kh - 8);
     filter.setBounds (r.getX() + 2 * kw, r.getY() + kh + 8, kw, kh - 8);
+    wobble.setBounds (r.getX() + 3 * kw, r.getY() + kh + 8, kw, kh - 8);
 
     curveView.setBounds (300, 36, 262, 250);
 }
@@ -1706,8 +1706,8 @@ void PhraseView::edited()
 //==============================================================================
 TapeCurveView::TapeCurveView (OriginPsyProcessor& p) : proc (p)
 {
-    setTooltip ("Tape speed over the slow down (the spin-up plays it backwards). Draw to shape it yourself; "
-                "right-click to go back to the Curve knob");
+    setTooltip ("Tape speed over the slow down (the spin-up plays it backwards). Draw to shape it. "
+                "Shift-drag: straight line. Right-click: reset, smooth, flip");
 }
 
 bool TapeCurveView::drawnOn() const { return proc.apvts.getRawParameterValue (params::tapeDrawn)->load() > 0.5f; }
@@ -1729,31 +1729,12 @@ juce::Rectangle<float> TapeCurveView::curveArea() const
 
 void TapeCurveView::beginDrawing()
 {
+    // The curve shown is always the one that plays; mark it as drawn so it is kept.
     if (drawnOn()) return;
-    std::array<float, TapeStop::numDrawnPoints> pts {};
-    TapeStop::fillDrawnFromKnob (proc.apvts.getRawParameterValue (params::tapeCurve)->load(), pts.data());
-    for (int i = 0; i < TapeStop::numDrawnPoints; ++i) proc.setTapeDrawnPoint (i, pts[(size_t) i]);
     if (auto* prm = proc.apvts.getParameter (params::tapeDrawn))
     {
         prm->beginChangeGesture();
         prm->setValueNotifyingHost (1.0f);
-        prm->endChangeGesture();
-    }
-}
-
-void TapeCurveView::addMenuItems (juce::PopupMenu& m)
-{
-    m.addSeparator();
-    m.addItem (100, "Use the Curve knob instead", drawnOn());
-}
-
-void TapeCurveView::menuItemChosen (int id)
-{
-    if (id != 100) return;
-    if (auto* prm = proc.apvts.getParameter (params::tapeDrawn))
-    {
-        prm->beginChangeGesture();
-        prm->setValueNotifyingHost (0.0f);
         prm->endChangeGesture();
     }
 }
@@ -1769,44 +1750,26 @@ void TapeCurveView::paint (juce::Graphics& g)
     g.setColour (colours::panelLight);
     g.fillRoundedRectangle (r, 6.0f);
     const auto area = curveArea();
-    const bool drawn = drawnOn();
-
     g.setColour (colours::outline);
     g.drawHorizontalLine ((int) area.getY(), area.getX(), area.getRight());
     g.drawHorizontalLine ((int) area.getBottom(), area.getX(), area.getRight());
 
-    juce::Path path;
-    if (drawn)
-    {
-        path = pointsPath (area);
-    }
-    else
-    {
-        // The Curve knob's shape.
-        std::array<float, TapeStop::numDrawnPoints> pts {};
-        TapeStop::fillDrawnFromKnob (proc.apvts.getRawParameterValue (params::tapeCurve)->load(), pts.data());
-        for (int i = 0; i < TapeStop::numDrawnPoints; ++i)
-        {
-            const float x = area.getX() + area.getWidth() * (float) i / (float) (TapeStop::numDrawnPoints - 1);
-            const float y = area.getBottom() - pts[(size_t) i] * area.getHeight();
-            if (i == 0) path.startNewSubPath (x, y); else path.lineTo (x, y);
-        }
-    }
+    const auto path = pointsPath (area);
     auto fill = path;
     fill.lineTo (area.getRight(), area.getBottom());
     fill.lineTo (area.getX(), area.getBottom());
     fill.closeSubPath();
-    g.setColour (colours::orange.withAlpha (drawn ? 0.15f : 0.06f));
+    g.setColour (colours::orange.withAlpha (0.15f));
     g.fillPath (fill);
-    g.setColour (drawn ? colours::orange : colours::orange.withAlpha (0.6f));
+    g.setColour (colours::orange);
     g.strokePath (path, juce::PathStrokeType (2.0f));
 
     g.setFont (juce::FontOptions (10.5f));
     g.setColour (colours::dim);
     const auto label = r.reduced (10.0f, 4.0f).withHeight (14.0f);
     g.drawText ("SPEED", label, juce::Justification::topLeft);
-    g.drawText (drawn ? "drawn" : (isMouseOverOrDragging() ? "draw to edit" : "Curve knob"), label,
-                juce::Justification::topRight);
+    if (isMouseOverOrDragging())
+        g.drawText ("draw  |  shift: line  |  right-click", label, juce::Justification::topRight);
 
     // Extra effects light up while the stop is on.
     const float fx = proc.meters.tapeFx.load();

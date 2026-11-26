@@ -42,6 +42,7 @@ public:
         float drive = 0.0f;     // tape saturation
         float crush = 0.0f;     // fewer bits and a lower sample rate
         float filter = 0.0f;    // low pass that closes as the tape slows
+        float wobble = 0.0f;    // wow and flutter: the pitch wobbles like a worn tape
     };
 
     static constexpr int numDrawnPoints = 64;
@@ -90,6 +91,7 @@ public:
         lp1 = lp2 = {};
         crushHold = {};
         crushCount = 0;
+        wowPhase = flutterPhase = 0.0;
     }
 
     void setParams (const Params& p) noexcept { params = p; }
@@ -170,11 +172,24 @@ public:
             lines[0].push (inL);
             lines[1].push (inR);
 
+            // Extra effects, only while the stop is happening.
+            const float fxGate = fxGateSmooth.next (stage == slowing || stage == held || stage == spinningUp ? 1.0f : 0.0f);
+
             float wetL = inL, wetR = inR;
             if (stage != live)
             {
                 lag = std::min (maxLag, lag + (1.0 - speed));
-                const double d = 1.0 + lag;
+                double d = 1.0 + lag;
+                if (params.wobble > 0.001f)
+                {
+                    // Slow wow plus fast flutter, up to about 6 ms of tape movement.
+                    wowPhase += 0.9 / sr;
+                    flutterPhase += 7.0 / sr;
+                    wowPhase -= std::floor (wowPhase);
+                    flutterPhase -= std::floor (flutterPhase);
+                    const double wob = 0.75 * (1.0 - std::cos (twoPi * wowPhase)) + 0.25 * (1.0 - std::cos (twoPi * flutterPhase));
+                    d += wob * 0.003 * sr * params.wobble * fxGate;
+                }
                 // Very slow tape fades out instead of holding a DC level.
                 const float g = std::min (1.0f, speed * 12.0f);
                 wetL = lines[0].read (d) * g;
@@ -189,8 +204,6 @@ public:
                 }
             }
 
-            // Extra effects, only while the stop is happening.
-            const float fxGate = fxGateSmooth.next (stage == slowing || stage == held || stage == spinningUp ? 1.0f : 0.0f);
             if (anyFx && fxGate > 0.0001f)
             {
                 float fx[2] = { wetL, wetR };
@@ -242,11 +255,13 @@ private:
             {
                 // Cut to a stop and spin up from there.
                 stage = spinningUp;
+                wowPhase = flutterPhase = 0.0;
                 rampPos = 0.0;
                 speed = 0.0f;
             }
             else if (stage == live || stage == catchingUp)
             {
+                if (stage == live) wowPhase = flutterPhase = 0.0; // wobble starts from the centre
                 if (stage == catchingUp) lag = 0.0;
                 stage = slowing;
                 rampPos = 0.0;
@@ -320,6 +335,7 @@ private:
     } fxGateSmooth;
     std::array<float, 2> lp1 {}, lp2 {}, crushHold {};
     int crushCount = 0;
+    double wowPhase = 0.0, flutterPhase = 0.0;
 };
 
 } // namespace originpsy

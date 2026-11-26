@@ -72,8 +72,10 @@ public:
     // Tape Drawn Curve is on. Saved with the project and presets.
     float getTapeDrawnPoint (int i) const noexcept { return tapeDrawn[(size_t) i].load(); }
     void setTapeDrawnPoint (int i, float v) noexcept;
-    /** Back to the default Curve knob shape. */
+    /** Back to the default slow-down shape. */
     void resetTapeDrawn() noexcept;
+    /** If the drawn curve was never used, draws the shape the old Curve knob gave. */
+    void adoptTapeCurveKnob() noexcept;
 
     // Glide pattern: which steps glide (bit set = glide) and each step's note
     // in semitones. Saved with the project and presets.
