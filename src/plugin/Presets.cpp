@@ -446,6 +446,42 @@ const std::vector<PresetManager::Factory>& PresetManager::factoryPresets()
               macros (p);
               connect (p, ModSource::fraza, params::echoSpread, 0.25f);
           } },
+
+        // Glide: bass portamento on audio.
+        { "Rolling Glide Bass", "Bass", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::glide, ModuleType::empty, ModuleType::empty);
+              set (p, params::glideMode, 1.0f);       // bend in
+              set (p, params::glideRate, 2.0f);       // 1/16
+              set (p, params::glideInterval, -5.0f);
+              set (p, params::glideTime, 0.35f);
+              set (p, params::glideCurve, -0.5f);
+              set (p, params::glideGrain, 60.0f);
+              p.setGlidePattern (0x8888u);            // the last 1/16 of every beat
+              macros (p);
+          } },
+
+        { "Acid Slide Line", "Bass", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::glide, ModuleType::empty, ModuleType::empty);
+              set (p, params::glideMode, 0.0f);       // slide
+              set (p, params::glideRate, 2.0f);       // 1/16
+              set (p, params::glideTime, 0.6f);
+              set (p, params::glideCurve, -0.3f);
+              const int notes[] = { 0, 0, 0, 12, 0, 0, 7, 0, 0, 0, 0, 12, 0, 3, 0, -5 };
+              for (int i = 0; i < 16; ++i) p.setGlideNote (i, notes[i]);
+              p.setGlidePattern (0xE858u);            // slide into steps 4, 5, 7, 12, 14, 15 and 16
+              macros (p);
+          } },
+
+        { "Dive Into Drop", "Build-up", [] (OriginPsyProcessor& p) {
+              slots (p, ModuleType::glide, ModuleType::fraktalEcho, ModuleType::empty);
+              p.setGlidePattern (0);
+              set (p, params::glideDive, 5.0f);       // every 8 bars
+              set (p, params::glideDiveLength, 5.0f); // 2 bars
+              set (p, params::glideDiveDepth, -36.0f);
+              set (p, params::glideDiveCurve, 0.5f);
+              set (p, params::echoMix, 0.15f);
+              macros (p);
+          } },
     };
     return presets;
 }
@@ -456,7 +492,7 @@ void PresetManager::randomize (OriginPsyProcessor& p, bool mutateOnly, juce::Ran
     const std::pair<ModuleType, const char*> prefixes[] = {
         { ModuleType::fraktalEcho, "echo_" }, { ModuleType::vokalAcid, "vokal_" }, { ModuleType::polimetarGate, "gate_" },
         { ModuleType::zapResonator, "zap_" }, { ModuleType::orbitDoppler, "orbit_" }, { ModuleType::tapeStop, "tape_" },
-        { ModuleType::spectralRatchet, "ratchet_" },
+        { ModuleType::spectralRatchet, "ratchet_" }, { ModuleType::glide, "glide_" },
     };
     juce::StringArray active;
     for (int i = 0; i < 4; ++i)
@@ -477,7 +513,8 @@ void PresetManager::randomize (OriginPsyProcessor& p, bool mutateOnly, juce::Ran
         const auto& id = ranged->paramID;
         bool mine = false;
         for (const auto& prefix : active) mine = mine || id.startsWith (prefix);
-        if (! mine || id == params::tapeBrake || id == params::tapeTrigger || id == params::tapeDrawn) continue;
+        if (! mine || id == params::tapeBrake || id == params::tapeTrigger || id == params::tapeDrawn
+            || id == params::glideDiveHold || id == params::glideDrawn || id == params::glideDive) continue;
 
         const bool isChoice = dynamic_cast<juce::AudioParameterChoice*> (ranged) != nullptr
                               || dynamic_cast<juce::AudioParameterBool*> (ranged) != nullptr;
@@ -557,6 +594,9 @@ void PresetManager::resetToDefaults (OriginPsyProcessor& p)
     p.setRatchetPattern (0xEEEEu);
     p.resetFrazaCustom();
     p.resetTapeDrawn();
+    p.setGlidePattern (0x8888u);
+    for (int i = 0; i < Glide::maxSteps; ++i) p.setGlideNote (i, 0);
+    p.resetGlideDrawn();
 }
 
 bool PresetManager::loadFactory (int index)

@@ -48,6 +48,11 @@ juce::StringArray lfoShapeNames() { return { "Sine", "Triangle", "Saw Up", "Saw 
 juce::StringArray noteNames() { return { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }; }
 juce::StringArray zapOrderNames() { return { "Up", "Down", "Random", "Hit strength" }; }
 juce::StringArray orbitPathNames() { return { "Circle", "Figure 8", "Spiral", "Fly-by" }; }
+juce::StringArray glideModeNames() { return { "Slide", "Bend in", "Bend out", "Scoop" }; }
+juce::StringArray glideDiveNames()
+{
+    return { "Off", "Dive button", "Every bar", "Every 2 bars", "Every 4 bars", "Every 8 bars", "Every 16 bars" };
+}
 
 bool isModulatable (const juce::RangedAudioParameter& p)
 {
@@ -72,6 +77,8 @@ juce::String formatValue (float v, const juce::String& unit)
         return (v > 0.0f ? "+" : "") + juce::String (v, 1) + " " + unit;
     if (unit == "m")
         return juce::String (v, 1) + " m";
+    if (unit == "% step")
+        return juce::String (juce::roundToInt (v * 100.0f)) + " % step";
     if (unit == "amount")
         return (v > 0.0f ? "+" : "") + juce::String (juce::roundToInt (v * 100.0f)) + " %";
     return juce::String (v, 3);
@@ -83,11 +90,11 @@ std::unique_ptr<juce::AudioParameterFloat> flt (const juce::String& id, const ju
     return std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { id, 1 }, name, range, def,
         juce::AudioParameterFloatAttributes()
-            .withLabel (unit == "amount" ? juce::String() : unit)
+            .withLabel (unit == "amount" || unit == "% step" ? juce::String() : unit)
             .withStringFromValueFunction ([unit] (float v, int) { return formatValue (v, unit); })
             .withValueFromStringFunction ([unit] (const juce::String& t) {
                 const float v = t.getFloatValue();
-                if (unit == "amount") return v / 100.0f;
+                if (unit == "amount" || unit == "% step") return v / 100.0f;
                 if (unit == "Hz" && t.containsIgnoreCase ("k")) return v * 1000.0f;
                 return v;
             }));
@@ -285,6 +292,28 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 
     // Global Dry/Wet: added last so existing parameter order stays the same.
     layout.add (percent (outMix, "Dry/Wet", 1.0f));
+
+    // Glide comes after everything that was there before it, for the same reason.
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("glide", "Glide", " | ");
+        juce::StringArray lengthNames;
+        for (const auto& l : Glide::diveLengths) lengthNames.add (l.name);
+        g->addChild (choice (glideMode, "Glide Mode", glideModeNames(), Glide::bendIn));
+        g->addChild (choice (glideRate, "Glide Step Rate", divisionNames(), 2));
+        g->addChild (integer (glideSteps, "Glide Steps", 1, Glide::maxSteps, 16));
+        g->addChild (flt (glideInterval, "Glide Interval", Range (-24.0f, 24.0f, 0.01f), -7.0f, "st"));
+        g->addChild (flt (glideTime, "Glide Time", skewed (0.02f, 4.0f, 0.5f), 0.5f, "% step"));
+        g->addChild (flt (glideCurve, "Glide Curve", Range (-1.0f, 1.0f, 0.001f), -0.4f, "amount"));
+        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { glideDrawn, 1 }, "Glide Drawn Curve", false));
+        g->addChild (flt (glideGrain, "Glide Grain", skewed (10.0f, 400.0f, 80.0f), 80.0f, "ms"));
+        g->addChild (percent (glideMix, "Glide Mix", 1.0f));
+        g->addChild (choice (glideDive, "Glide Dive", glideDiveNames(), Glide::diveOff));
+        g->addChild (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { glideDiveHold, 1 }, "Glide Dive Hold", false));
+        g->addChild (choice (glideDiveLength, "Glide Dive Length", lengthNames, 3));
+        g->addChild (flt (glideDiveDepth, "Glide Dive Depth", Range (-48.0f, 24.0f, 0.01f), -24.0f, "st"));
+        g->addChild (flt (glideDiveCurve, "Glide Dive Curve", Range (-1.0f, 1.0f, 0.001f), 0.3f, "amount"));
+        layout.add (std::move (g));
+    }
 
     return layout;
 }

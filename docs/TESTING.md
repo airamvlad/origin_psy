@@ -57,6 +57,7 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 
 - [ ] Bitwig: notes reach OriginPsy (instrument track after the synth, or Note Receiver); "MIDI" flashes in the header
 - [ ] Hold C1 with Tape Stop in a slot: the tape slows down, let go and it comes back; the BRAKE button lights up
+- [ ] Hold G1 with Glide in a slot (Dive = Dive button): the sound dives, let go and it snaps back; the DIVE button lights up
 - [ ] D1 fires DROP (same as the button)
 - [ ] E1 / F1 step through the presets; Program Change from a clip loads the matching preset
 - [ ] Other notes do nothing
@@ -94,6 +95,18 @@ For each item: does it sound good, are there clicks, does it follow the tempo? N
 - [ ] Mask Alternate combs and Walking band change the colour on each repeat
 - [ ] Adding it to a slot: Bitwig compensates the latency (the track stays in time with the others)
 - [ ] Mix 0 %: sounds exactly like the dry track
+
+## Glide
+
+- [ ] Preset Bass / Rolling Glide Bass on a rolling bass: the last 1/16 of each beat slides up into the note, in time
+- [ ] Mode Slide with a few step notes (e.g. +12, +7) and glide on some of them: the line slides into those notes, the others jump
+- [ ] Bend out and Scoop with Interval -12: glide steps fall away (and come back for Scoop)
+- [ ] Draw your own shape in Glide shape: the glide follows it; right-click "Use the Curve knob instead" goes back
+- [ ] Dive Every 8 bars, length 2 bars, depth -36: the bass dives before the bar line and is back on it
+- [ ] Dive button held (or MIDI G1): dives while held, snaps back when let go
+- [ ] Grain 200 ms vs 20 ms: long is smoother, short is tighter; no clicks at the splices
+- [ ] Steps with no glide and note 0 sound exactly like the dry track (Mix 100 %)
+- [ ] Save the Bitwig project and reopen it: glide steps, notes and the drawn shape are back
 
 ## Modulation
 

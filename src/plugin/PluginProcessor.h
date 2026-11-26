@@ -75,13 +75,27 @@ public:
     /** Back to the default Curve knob shape. */
     void resetTapeDrawn() noexcept;
 
+    // Glide pattern: which steps glide (bit set = glide) and each step's note
+    // in semitones. Saved with the project and presets.
+    uint32_t getGlidePattern() const noexcept { return glidePattern.load(); }
+    void setGlidePattern (uint32_t pattern) noexcept { glidePattern = pattern & 0xffffu; }
+    void toggleGlideStep (int step) noexcept { if (step >= 0 && step < 16) glidePattern ^= (1u << step); }
+    int getGlideNote (int step) const noexcept { return glideNotes[(size_t) step].load(); }
+    void setGlideNote (int step, int semitones) noexcept;
+    // Hand-drawn glide shape, used when Glide Drawn Curve is on.
+    float getGlideDrawnPoint (int i) const noexcept { return glideDrawn[(size_t) i].load(); }
+    void setGlideDrawnPoint (int i, float v) noexcept;
+    /** Back to the default Curve knob shape. */
+    void resetGlideDrawn() noexcept;
+
     /** Sets the Fraza amounts to a ready made build-up (the Drop button). */
     void applyDropPreset();
 
     // MIDI control (any channel). Notes: C1 (36) held = BRAKE, D1 (38) = DROP,
-    // E1 (40) = previous preset, F1 (41) = next preset. Program Change n loads
-    // the n-th preset of the list (factory presets first, then the user's).
-    static constexpr int midiNoteBrake = 36, midiNoteDrop = 38, midiNotePrev = 40, midiNoteNext = 41;
+    // E1 (40) = previous preset, F1 (41) = next preset, G1 (43) held = Glide
+    // DIVE. Program Change n loads the n-th preset of the list (factory
+    // presets first, then the user's).
+    static constexpr int midiNoteBrake = 36, midiNoteDrop = 38, midiNotePrev = 40, midiNoteNext = 41, midiNoteDive = 43;
     /** Runs DROP and preset changes asked for by MIDI now (normally they run
         on the message thread right after the block). */
     void flushMidiActions() { midiActions.handleUpdateNowIfNeeded(); }
@@ -109,6 +123,10 @@ public:
         std::atomic<bool> hostPlaying { false };
         std::atomic<uint32_t> midiEvents { 0 };   // counts MIDI messages that did something
         std::atomic<bool> midiBrake { false };
+        std::atomic<bool> midiDive { false };
+        std::atomic<float> glidePitch { 0.0f };
+        std::atomic<float> glideDive { 0.0f };
+        std::atomic<int> glideStep { -1 };
         std::atomic<bool> sidechainConnected { false };
         std::array<std::atomic<float>, originpsy::numModSources> source {};
     } meters;
@@ -153,7 +171,7 @@ private:
         std::atomic<bool> drop { false };
         std::atomic<int> program { -1 }, step { 0 };
     } midiActions { *this };
-    bool midiBrake = false;
+    bool midiBrake = false, midiDive = false;
 
     originpsy::Chain chain;
     originpsy::InternalClock clock;
@@ -173,6 +191,10 @@ private:
     std::array<std::atomic<float>, originpsy::Fraza::numCustomPoints> frazaCustom {};
     std::array<std::atomic<float>, originpsy::TapeStop::numDrawnPoints> tapeDrawn {};
     std::array<float, originpsy::TapeStop::numDrawnPoints> tapeDrawnBlock {}; // audio thread copy
+    std::atomic<uint32_t> glidePattern { 0x8888u };
+    std::array<std::atomic<int>, originpsy::Glide::maxSteps> glideNotes {};
+    std::array<std::atomic<float>, originpsy::Glide::numDrawnPoints> glideDrawn {};
+    std::array<float, originpsy::Glide::numDrawnPoints> glideDrawnBlock {}; // audio thread copy
     std::atomic<int> wantedLatency { 0 };
     void handleAsyncUpdate() override { setLatencySamples (wantedLatency.load()); }
 

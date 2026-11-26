@@ -1,6 +1,6 @@
 # OriginPsy
 
-An FX plugin (VST3, AU on macOS, and Standalone) with effects built for psytrance that you won't find as ready-made plugins. It has seven modules plus Phrase, a modulation source tied to the phrase.
+An FX plugin (VST3, AU on macOS, and Standalone) with effects built for psytrance that you won't find as ready-made plugins. It has eight modules plus Phrase, a modulation source tied to the phrase.
 
 ## How it works
 
@@ -76,6 +76,19 @@ On every freeze step of a 1 to 16 step pattern it holds the spectrum of the soun
 - **Smear**: from glassy to washed out; **Tilt**: darker or brighter repeats
 - It uses a 2048 point FFT, so it adds 2048 samples of latency (about 43 ms at 48 kHz) while it is in the chain. The plugin reports it, and Bitwig compensates for it.
 
+### Glide
+
+Psytrance bass portamento on audio: on chosen steps of a tempo-synced pattern, the pitch of the sound slides like the glide of a bassline, instead of jumping. Put it on a rolling bass (or a lead, an acid line, a vocal) and draw where it should slide.
+
+- **Steps pattern** (left): the top row switches Glide on each step (click, or drag to paint). The lane under it gives each step its own note in semitones (-24 to +24): drag up and down, double-click for 0. Right-click for ready-made patterns (glide on the last 1/16 of each beat, off-beats, random), octave jumps, random notes in minor, shifting the pattern left or right. The trace on top shows the pitch you hear.
+- **Mode**: **Slide** (the pitch follows the step notes; glide steps slide in from the previous note, the others jump: a 303-style line on audio), **Bend in** (glide steps start Interval away and slide onto their note), **Bend out** (glide steps slide away by Interval and stay there until the next step), **Scoop** (out by Interval and back within the glide)
+- **Step rate** (1/32 to 1 bar), **Steps** (1 to 16), **Interval** (-24 to +24 semitones)
+- **Time**: how long a glide takes, as a part of one step (2 % to 400 %; over 100 % it carries on into the next step)
+- **Curve**: fast start that settles (left), straight (middle) or slow start that rushes in (right). Or draw the shape yourself in **Glide shape**: bottom = where the glide starts, top = where it lands. You can draw wobbles, stairs or a late snap (right-click has these ready-made, plus smooth, flip and reverse). Right-click → "Use the Curve knob instead" goes back.
+- **Dive**: bends the whole sound by **Dive depth** (-48 to +24 semitones) over **Dive length** (1/16 to 2 bars) with its own **Dive curve**, and snaps back on the bar line. It fires every 1, 2, 4, 8 or 16 bars, or while you hold the **DIVE** button (Dive set to Dive button; automate Glide Dive Hold, or hold MIDI note G1).
+- **Grain**: the pitch is changed tape-style by reading the sound faster or slower. When the read position drifts more than Grain away, it jumps to the spot where the waveform matches best and crossfades there. Long grains (80 to 200 ms) keep a bass smooth, short ones keep the timing tight. When the pitch is back at 0, Glide plays the live sound again, untouched.
+- **Mix**. No latency.
+
 ### Phrase
 
 A curve that knows where you are in an 8, 16 or 32 bar phrase (it rises through the phrase by default; the dot on the curve shows its value now). The knobs on the right set how far the curve moves each parameter (Echo Mix, Echo Feedback, Echo Damp, Vocal Formant, Vocal Resonance, Gate Depth), so the build-up plays itself with no automation lanes. **Offset** moves the start of the phrase by a few bars. The **DROP** button sets up a ready-made build-up over the last 4 bars of the phrase in one click.
@@ -109,13 +122,14 @@ OriginPsy listens to MIDI on any channel, so pads or clips can play the performa
 | Note D1 (38) | **DROP** |
 | Note E1 (40) | Previous preset |
 | Note F1 (41) | Next preset |
+| Note G1 (43), held | **DIVE** (Glide dives while held, with Dive set to Dive button) |
 | Program Change n | Loads preset n of the list (0 = first factory preset; user presets follow the factory ones) |
 
 In Bitwig, put OriginPsy on an instrument track after the instrument, or use a Note Receiver on the audio track, and send it notes from a clip or controller. "MIDI" flashes in the header when a message does something.
 
 ### Presets
 
-The bar at the top lists factory presets by category (Init, Full-on, Dark, Prog, Build-up, Lead FX, Bass, Pads, Glitch), then your own. The genre sets are starting points for a whole track style: **Full-on** is bright and busy (Hijaz, 1/16 grooves, zaps, a riser with a tape stop every 16 bars), **Dark** is low and twisted (Hungarian and harmonic minor, robot voice, 1/32 glitch swarms, tape slow-downs), **Prog** is deep and smooth (Dorian and natural minor, slow orbits, long LFOs, a 32 bar journey). **Save** stores the whole state (parameters, drawn gate steps and modulation) as a `.originpsy` file in `Documents/AMV/OriginPsy Presets`. Subfolders there show up too.
+The bar at the top lists factory presets by category (Init, Full-on, Dark, Prog, Build-up, Lead FX, Bass, Pads, Glitch), then your own. The genre sets are starting points for a whole track style: **Full-on** is bright and busy (Hijaz, 1/16 grooves, zaps, a riser with a tape stop every 16 bars), **Dark** is low and twisted (Hungarian and harmonic minor, robot voice, 1/32 glitch swarms, tape slow-downs), **Prog** is deep and smooth (Dorian and natural minor, slow orbits, long LFOs, a 32 bar journey). **Bass** has two Glide presets: **Rolling Glide Bass** (the last 1/16 of each beat bends in from 5 semitones below) and **Acid Slide Line** (a sliding note pattern); **Dive Into Drop** in Build-up dives 3 octaves over the last 2 bars of every 8. **Save** stores the whole state (parameters, drawn gate steps, Glide notes, drawn curves and modulation) as a `.originpsy` file in `Documents/AMV/OriginPsy Presets`. Subfolders there show up too.
 
 ### Randomize and Mutate
 
