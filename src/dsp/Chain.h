@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FraktalEcho.h"
+#include "Glide.h"
 #include "OrbitDoppler.h"
 #include "PolimetarGate.h"
 #include "SpectralRatchet.h"
@@ -14,8 +15,8 @@
 namespace originpsy
 {
 
-enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler, tapeStop, spectralRatchet };
-constexpr int numModuleTypes = 8;
+enum class ModuleType : int { empty = 0, fraktalEcho, vokalAcid, polimetarGate, zapResonator, orbitDoppler, tapeStop, spectralRatchet, glide };
+constexpr int numModuleTypes = 9;
 
 inline const char* moduleName (ModuleType t) noexcept
 {
@@ -28,6 +29,7 @@ inline const char* moduleName (ModuleType t) noexcept
         case ModuleType::orbitDoppler:  return "Orbit Doppler";
         case ModuleType::tapeStop:      return "Tape Stop";
         case ModuleType::spectralRatchet: return "Spectral Ratchet";
+        case ModuleType::glide:         return "Glide";
         case ModuleType::empty:         break;
     }
     return "Empty";
@@ -81,6 +83,7 @@ public:
     OrbitDoppler orbit;
     TapeStop tape;
     SpectralRatchet ratchet;
+    Glide glide;
 
     void prepare (double sampleRate, int maxBlock)
     {
@@ -92,6 +95,7 @@ public:
         orbit.prepare (sampleRate, maxBlock);
         tape.prepare (sampleRate, maxBlock);
         ratchet.prepare (sampleRate, maxBlock);
+        glide.prepare (sampleRate, maxBlock);
         fadeSamples = std::max (1, (int) (sampleRate * 0.008));
         blockSize = std::max (1, maxBlock);
         for (auto& d : dry) d.assign ((size_t) blockSize, 0.0f);
@@ -108,6 +112,7 @@ public:
         orbit.reset();
         tape.reset();
         ratchet.reset();
+        glide.reset();
         fadeGain = 1.0f;
         fadingOut = false;
         active = pending;
@@ -175,6 +180,7 @@ private:
                 case ModuleType::orbitDoppler:  orbit.process (left, right, numSamples, t); break;
                 case ModuleType::tapeStop:      tape.process (left, right, numSamples, t); break;
                 case ModuleType::spectralRatchet: ratchet.process (left, right, numSamples, t); break;
+                case ModuleType::glide:         glide.process (left, right, numSamples, t); break;
                 case ModuleType::empty: break;
             }
             if (blend)
@@ -224,6 +230,7 @@ private:
             case ModuleType::orbitDoppler:  orbit.reset(); break;
             case ModuleType::tapeStop:      tape.reset(); break;
             case ModuleType::spectralRatchet: ratchet.reset(); break;
+            case ModuleType::glide:         glide.reset(); break;
             case ModuleType::empty: break;
         }
     }

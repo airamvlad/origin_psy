@@ -13,6 +13,7 @@ OriginPsyProcessor::OriginPsyProcessor()
 {
     resetFrazaCustom();
     resetTapeDrawn();
+    resetGlideDrawn();
     for (auto* p : getParameters())
         if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p))
             if (params::isModulatable (*ranged))
@@ -253,6 +254,30 @@ void OriginPsyProcessor::updateModules()
             rp.mix *= m (params::slotMix (i));
     chain.ratchet.setParams (rp);
 
+    // Glide. The Dive button is read as it is, like Brake.
+    Glide::Params gp;
+    gp.mode = (int) m (params::glideMode);
+    gp.division = (int) m (params::glideRate);
+    gp.steps = (int) m (params::glideSteps);
+    gp.glides = glidePattern.load();
+    for (int i = 0; i < Glide::maxSteps; ++i) gp.notes[(size_t) i] = glideNotes[(size_t) i].load (std::memory_order_relaxed);
+    gp.interval = m (params::glideInterval);
+    gp.time = m (params::glideTime);
+    gp.curve = m (params::glideCurve);
+    gp.grain = m (params::glideGrain) * 0.001f;
+    gp.mix = m (params::glideMix);
+    gp.dive = (int) m (params::glideDive);
+    gp.diveHold = value (params::glideDiveHold) > 0.5f || midiDive;
+    gp.diveLength = (int) m (params::glideDiveLength);
+    gp.diveDepth = m (params::glideDiveDepth);
+    gp.diveCurve = m (params::glideDiveCurve);
+    if (value (params::glideDrawn) > 0.5f)
+    {
+        for (size_t i = 0; i < glideDrawnBlock.size(); ++i) glideDrawnBlock[i] = glideDrawn[i].load (std::memory_order_relaxed);
+        gp.drawn = glideDrawnBlock.data();
+    }
+    chain.glide.setParams (gp);
+
     // Latency follows the layout (Spectral Ratchet adds 2048 samples).
     const int latency = Chain::latencyOf (layout);
     if (latency != wantedLatency.load())
@@ -274,6 +299,7 @@ void OriginPsyProcessor::handleMidi (const juce::MidiBuffer& midi)
             switch (msg.getNoteNumber())
             {
                 case midiNoteBrake: midiBrake = true; break;
+                case midiNoteDive: midiDive = true; break;
                 case midiNoteDrop: midiActions.drop = true; asked = true; break;
                 case midiNotePrev: --midiActions.step; asked = true; break;
                 case midiNoteNext: ++midiActions.step; asked = true; break;
@@ -286,6 +312,11 @@ void OriginPsyProcessor::handleMidi (const juce::MidiBuffer& midi)
             midiBrake = false;
             ++used;
         }
+        else if (msg.isNoteOff() && msg.getNoteNumber() == midiNoteDive)
+        {
+            midiDive = false;
+            ++used;
+        }
         else if (msg.isProgramChange())
         {
             midiActions.program = msg.getProgramChangeNumber();
@@ -296,10 +327,12 @@ void OriginPsyProcessor::handleMidi (const juce::MidiBuffer& midi)
         else if (msg.isAllNotesOff() || msg.isAllSoundOff())
         {
             midiBrake = false;
+            midiDive = false;
         }
     }
     if (used > 0) meters.midiEvents += used;
     meters.midiBrake = midiBrake;
+    meters.midiDive = midiDive;
     if (asked) midiActions.triggerAsyncUpdate();
 }
 
@@ -435,6 +468,9 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.ratchetFreezing = chain.ratchet.isFreezing();
     for (size_t b = 0; b < meters.ratchetBands.size(); ++b)
         meters.ratchetBands[b].store (chain.ratchet.getBands()[b], std::memory_order_relaxed);
+    meters.glidePitch = chain.glide.getPitch();
+    meters.glideDive = chain.glide.getDive();
+    meters.glideStep = chain.glide.getStep();
     meters.zapNote = chain.zap.getLastNote();
     meters.zapHits = chain.zap.getHitCount();
     meters.zapLevel = chain.zap.getLevel();
@@ -445,6 +481,24 @@ void OriginPsyProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     meters.frazaValue = fraza;
     meters.bpm = t.bpm;
     meters.hostPlaying = t.playing;
+}
+
+void OriginPsyProcessor::setGlideNote (int step, int semitones) noexcept
+{
+    if (step >= 0 && step < Glide::maxSteps)
+        glideNotes[(size_t) step] = juce::jlimit (Glide::minNote, Glide::maxNote, semitones);
+}
+
+void OriginPsyProcessor::setGlideDrawnPoint (int i, float v) noexcept
+{
+    if (i >= 0 && i < Glide::numDrawnPoints) glideDrawn[(size_t) i] = juce::jlimit (0.0f, 1.0f, v);
+}
+
+void OriginPsyProcessor::resetGlideDrawn() noexcept
+{
+    std::array<float, Glide::numDrawnPoints> pts;
+    Glide::fillDrawnFromKnob (-0.4f, pts.data());
+    for (size_t i = 0; i < pts.size(); ++i) glideDrawn[i] = pts[i];
 }
 
 void OriginPsyProcessor::setFrazaCustomPoint (int i, float v) noexcept
@@ -543,6 +597,13 @@ juce::ValueTree OriginPsyProcessor::createStateTree()
     juce::StringArray tape;
     for (const auto& v : tapeDrawn) tape.add (juce::String (v.load(), 4));
     state.setProperty ("tape_drawn_curve", tape.joinIntoString (" "), nullptr);
+    state.setProperty ("glide_pattern", (juce::int64) glidePattern.load(), nullptr);
+    juce::StringArray notes;
+    for (const auto& v : glideNotes) notes.add (juce::String (v.load()));
+    state.setProperty ("glide_notes", notes.joinIntoString (" "), nullptr);
+    juce::StringArray glide;
+    for (const auto& v : glideDrawn) glide.add (juce::String (v.load(), 4));
+    state.setProperty ("glide_drawn_curve", glide.joinIntoString (" "), nullptr);
     state.setProperty ("version", JucePlugin_VersionString, nullptr);
     state.setProperty ("preset_name", currentPresetName, nullptr);
 
@@ -588,6 +649,27 @@ void OriginPsyProcessor::loadStateTree (const juce::ValueTree& source)
         if (values.size() == TapeStop::numDrawnPoints)
             for (int i = 0; i < TapeStop::numDrawnPoints; ++i)
                 setTapeDrawnPoint (i, values[i].getFloatValue());
+    }
+
+    // Older projects have no Glide: its defaults.
+    glidePattern = state.hasProperty ("glide_pattern") ? (uint32_t) (juce::int64) state.getProperty ("glide_pattern") & 0xffffu
+                                                        : 0x8888u;
+    for (int i = 0; i < Glide::maxSteps; ++i) setGlideNote (i, 0);
+    if (state.hasProperty ("glide_notes"))
+    {
+        auto values = juce::StringArray::fromTokens (state.getProperty ("glide_notes").toString(), " ", "");
+        values.removeEmptyStrings();
+        for (int i = 0; i < std::min (values.size(), Glide::maxSteps); ++i)
+            setGlideNote (i, values[i].getIntValue());
+    }
+    resetGlideDrawn();
+    if (state.hasProperty ("glide_drawn_curve"))
+    {
+        auto values = juce::StringArray::fromTokens (state.getProperty ("glide_drawn_curve").toString(), " ", "");
+        values.removeEmptyStrings();
+        if (values.size() == Glide::numDrawnPoints)
+            for (int i = 0; i < Glide::numDrawnPoints; ++i)
+                setGlideDrawnPoint (i, values[i].getFloatValue());
     }
 
     // Older projects have no drawn curve: start from a straight rise.
