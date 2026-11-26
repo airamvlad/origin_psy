@@ -24,6 +24,7 @@ inline const juce::Colour lime { 0xffa6ff4d };
 inline const juce::Colour blue { 0xff5aa9ff };
 inline const juce::Colour orange { 0xffff7a45 };
 inline const juce::Colour violet { 0xffb57bff };
+inline const juce::Colour rose { 0xffff5c93 };
 } // namespace colours
 
 class PsyLookAndFeel : public juce::LookAndFeel_V4
@@ -265,6 +266,77 @@ private:
     float reelAngle = 0.0f;
 };
 
+/** Glide shape: how the pitch travels from the start of a glide to its
+    target. Drawing on it switches Glide to the drawn curve. */
+class GlideCurveView : public CurveDrawer
+{
+public:
+    explicit GlideCurveView (OriginPsyProcessor& p);
+    void paint (juce::Graphics&) override;
+
+private:
+    OriginPsyProcessor& proc;
+    bool drawnOn() const;
+    int numPoints() const override;
+    float getPoint (int i) const override;
+    void setPoint (int i, float v) override;
+    void beginDrawing() override;
+    juce::Rectangle<float> curveArea() const override;
+    float defaultPoint (int i) const override;
+    void addMenuItems (juce::PopupMenu&) override;
+    void menuItemChosen (int) override;
+    void edited() override;
+};
+
+/** The Glide pattern: a live pitch trace, a row of Glide switches and a lane
+    of step notes (drag up and down, double-click for 0). */
+class GlideSteps : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit GlideSteps (OriginPsyProcessor& p);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    /** Adds the current pitch to the trace (called by the page's timer). */
+    void tick();
+
+private:
+    juce::Rectangle<float> traceArea() const;
+    juce::Rectangle<float> glideRow() const;
+    juce::Rectangle<float> noteLane() const;
+    int stepAt (float x) const;
+    int noteAt (float y) const;
+    void showMenu();
+    void edited();
+
+    OriginPsyProcessor& proc;
+    std::array<float, 160> trace {};
+    int tracePos = 0;
+    enum Drag { none, glides, notes } drag = none;
+    bool paintGlideOn = true;
+    int lastDragStep = -1;
+};
+
+class GlidePage : public juce::Component
+{
+public:
+    explicit GlidePage (OriginPsyProcessor&);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void setDive (bool on);
+
+    OriginPsyProcessor& proc;
+    Choice mode, rate, dive, diveLength;
+    Knob steps, interval, time, curve, grain, mix, diveDepth, diveCurve;
+    juce::TextButton diveButton { "DIVE" };
+    GlideSteps stepsView;
+    GlideCurveView curveView;
+};
+
 class RatchetPage : public juce::Component
 {
 public:
@@ -427,6 +499,7 @@ private:
     originpsy::ui::OrbitPage orbitPage;
     originpsy::ui::TapePage tapePage;
     originpsy::ui::RatchetPage ratchetPage;
+    originpsy::ui::GlidePage glidePage;
     originpsy::ui::FrazaStrip fraza;
     originpsy::ui::ModStrip modStrip;
     originpsy::ui::PresetBar presetBar;

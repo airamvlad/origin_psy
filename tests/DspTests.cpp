@@ -426,7 +426,7 @@ void performanceTest()
     Chain c2;
     c2.prepare (sr, 256);
     Chain::Layout two;
-    two.slots = { ModuleType::zapResonator, ModuleType::orbitDoppler, ModuleType::spectralRatchet, ModuleType::empty };
+    two.slots = { ModuleType::zapResonator, ModuleType::orbitDoppler, ModuleType::spectralRatchet, ModuleType::glide };
     c2.setLayout (two);
     c2.reset();
     auto l2 = saw (110.0, (size_t) sr * seconds), r2 = l2;
@@ -434,7 +434,7 @@ void performanceTest()
     const auto start2 = std::chrono::steady_clock::now();
     run (c2, l2, r2, 145.0);
     const double elapsed2 = std::chrono::duration<double> (std::chrono::steady_clock::now() - start2).count();
-    std::printf ("CPU: Zap Resonator + Orbit Doppler + Spectral Ratchet = %.2f %% of one core at 48 kHz\n", elapsed2 / (double) seconds * 100.0);
+    std::printf ("CPU: Zap Resonator + Orbit Doppler + Spectral Ratchet + Glide = %.2f %% of one core at 48 kHz\n", elapsed2 / (double) seconds * 100.0);
     check (allFinite (l2) && allFinite (r2), "zap and orbit chain output is finite");
 }
 
@@ -948,6 +948,220 @@ void modulationTests()
     env.process (quiet.data(), nullptr, (int) quiet.size());
     check (env.value() < 0.05f, "envelope falls back in silence");
 }
+
+//==============================================================================
+void glideTests()
+{
+    const size_t sec = (size_t) sr;
+    auto runBlocks = [] (Glide& g, std::vector<float>& l, std::vector<float>& r, double bpm, size_t from, size_t to, int block = 64) {
+        for (size_t s = from; s < to; s += (size_t) block)
+        {
+            const int n = (int) std::min<size_t> ((size_t) block, to - s);
+            auto t = transportAt (bpm, (double) s / (sr * 60.0 / bpm));
+            g.process (l.data() + s, r.data() + s, n, t);
+        }
+    };
+
+    // Nothing to glide: the live sound passes untouched.
+    {
+        Glide g;
+        g.prepare (sr, 256);
+        Glide::Params p;
+        p.glides = 0;
+        g.setParams (p);
+        g.reset();
+        auto l = saw (55.0, sec), r = l;
+        const auto ref = l;
+        run (g, l, r, 140.0);
+        double err = 0.0;
+        for (size_t i = 0; i < l.size(); ++i) err = std::max (err, (double) std::abs (l[i] - ref[i]));
+        check (err == 0.0, "glide with no glides and no notes is transparent");
+    }
+
+    // Step notes without glide: held transpositions, an octave up and down.
+    for (int semis : { 12, -12, 7 })
+    {
+        Glide g;
+        g.prepare (sr, 256);
+        Glide::Params p;
+        p.mode = Glide::slide;
+        p.glides = 0;
+        p.notes.fill (semis);
+        g.setParams (p);
+        g.reset();
+        auto l = sine (110.0, sec * 2), r = l;
+        run (g, l, r, 140.0);
+        const double want = 110.0 * std::exp2 (semis / 12.0);
+        const double got = crossingRate (l, sec / 2, sec * 2);
+        if (! near (got, want, want * 0.02)) std::printf ("  transpose %d: %.1f Hz, want %.1f\n", semis, got, want);
+        check (near (got, want, want * 0.02), "step notes transpose the sound");
+        // Splices are crossfaded where the waveform matches: no deep holes.
+        double worst = 1.0;
+        for (size_t s = sec / 2; s + 960 < sec * 2; s += 480) worst = std::min (worst, rms (l, s, s + 960));
+        if (worst < 0.25) std::printf ("  transpose %d: quietest 20 ms rms %.3f\n", semis, worst);
+        check (worst > 0.25, "pitch shifted sine keeps its level through the splices");
+        check (allFinite (l), "transposed output is finite");
+    }
+
+    // Bend in: starts at the interval and slides onto the note over Time.
+    {
+        Glide g;
+        g.prepare (sr, 256);
+        Glide::Params p;
+        p.mode = Glide::bendIn;
+        p.division = 8;      // 1/4 = 0.5 s at 120 BPM
+        p.glides = 0xffffu;
+        p.interval = -12.0f;
+        p.time = 0.5f;       // 0.25 s
+        p.curve = 0.0f;      // straight
+        g.setParams (p);
+        g.reset();
+        auto l = sine (220.0, sec * 2), r = l;
+        const auto ref = l;
+        runBlocks (g, l, r, 120.0, 0, sec / 8);
+        check (near (g.getPitch(), -6.0, 0.3), "bend in is halfway after half its time");
+        runBlocks (g, l, r, 120.0, sec / 8, sec * 2);
+        // The second half of each step is at the note again and back on the live sound.
+        double err = 0.0;
+        for (size_t i = sec * 3 / 10; i < sec * 49 / 100; ++i) err = std::max (err, (double) std::abs (l[i] - ref[i]));
+        check (err == 0.0, "after the glide the live sound comes back exactly");
+        check (allFinite (l), "bend in output is finite");
+    }
+
+    // Bend out holds at the interval until the next step; Scoop comes back.
+    {
+        Glide g;
+        g.prepare (sr, 256);
+        Glide::Params p;
+        p.mode = Glide::bendOut;
+        p.division = 8;
+        p.glides = 0x1u;     // only the first step
+        p.steps = 2;
+        p.interval = 5.0f;
+        p.time = 0.25f;
+        g.setParams (p);
+        g.reset();
+        auto l = sine (220.0, sec), r = l;
+        runBlocks (g, l, r, 120.0, 0, sec * 4 / 10);
+        check (near (g.getPitch(), 5.0, 0.05), "bend out holds the interval");
+        runBlocks (g, l, r, 120.0, sec * 4 / 10, sec * 6 / 10);
+        check (near (g.getPitch(), 0.0, 0.05), "a step without glide goes back to its note");
+
+        p.mode = Glide::scoop;
+        p.time = 0.5f;
+        g.setParams (p);
+        g.reset();
+        auto sl = sine (220.0, sec), srr = sl;
+        runBlocks (g, sl, srr, 120.0, 0, sec / 8);
+        check (near (g.getPitch(), 5.0, 0.1), "scoop reaches the interval halfway");
+        runBlocks (g, sl, srr, 120.0, sec / 8, sec * 4 / 10);
+        check (near (g.getPitch(), 0.0, 0.05), "scoop comes back to the note");
+    }
+
+    // Slide: portamento from the last note to the next one on glide steps.
+    {
+        Glide g;
+        g.prepare (sr, 256);
+        Glide::Params p;
+        p.mode = Glide::slide;
+        p.division = 8;
+        p.steps = 2;
+        p.notes[0] = 0;
+        p.notes[1] = 12;
+        p.glides = 0x2u;     // slide into step 2
+        p.time = 1.0f;
+        p.curve = 0.0f;
+        g.setParams (p);
+        g.reset();
+        auto l = sine (220.0, sec * 2), r = l;
+        runBlocks (g, l, r, 120.0, 0, sec * 3 / 4);
+        check (near (g.getPitch(), 6.0, 0.3), "slide is halfway between the notes");
+        runBlocks (g, l, r, 120.0, sec * 3 / 4, sec * 101 / 100);
+        check (near (g.getPitch(), 0.0, 0.05), "a step without glide jumps to its note");
+    }
+
+    // Drawn curve: a step shape that jumps at the middle of the glide.
+    {
+        std::array<float, Glide::numDrawnPoints> drawn {};
+        for (int i = 0; i < Glide::numDrawnPoints; ++i) drawn[(size_t) i] = i < Glide::numDrawnPoints / 2 ? 0.0f : 1.0f;
+        check (Glide::drawnAt (drawn.data(), 0.25) == 0.0f && Glide::drawnAt (drawn.data(), 0.75) == 1.0f, "drawn curve reads back");
+        Glide g;
+        g.prepare (sr, 256);
+        Glide::Params p;
+        p.mode = Glide::bendOut;
+        p.division = 8;
+        p.interval = -12.0f;
+        p.glides = 0xffffu;
+        p.time = 1.0f;
+        p.drawn = drawn.data();
+        g.setParams (p);
+        g.reset();
+        auto l = sine (220.0, sec), r = l;
+        runBlocks (g, l, r, 120.0, 0, sec / 5);
+        check (near (g.getPitch(), 0.0, 0.05), "drawn curve: flat start");
+        runBlocks (g, l, r, 120.0, sec / 5, sec * 4 / 10);
+        check (near (g.getPitch(), -12.0, 0.05), "drawn curve: jumps in the middle");
+    }
+    check (Glide::knobShape (0.0f, 0.5) == 0.5f && Glide::knobShape (-1.0f, 0.5) > 0.9f && Glide::knobShape (1.0f, 0.5) < 0.1f,
+           "Curve knob bends the glide");
+
+    // Dive every bar: in the last 1/4 before the bar line, back on the bar.
+    {
+        Glide g;
+        g.prepare (sr, 256);
+        Glide::Params p;
+        p.glides = 0;
+        p.dive = Glide::dive1;
+        p.diveLength = 2;   // 1/4 = 0.5 s at 120
+        p.diveDepth = -24.0f;
+        p.diveCurve = 0.0f;
+        g.setParams (p);
+        g.reset();
+        auto l = sine (440.0, sec * 3), r = l;
+        runBlocks (g, l, r, 120.0, 0, sec);
+        check (g.getDive() == 0.0f, "no dive early in the bar");
+        runBlocks (g, l, r, 120.0, sec, sec * 7 / 4);
+        check (near (g.getDive(), -12.0, 0.5), "dive halfway in its last quarter");
+        runBlocks (g, l, r, 120.0, sec * 7 / 4, sec * 21 / 10);
+        check (g.getDive() == 0.0f, "dive lets go on the bar line");
+        check (allFinite (l), "dive output is finite");
+
+        // Hold button.
+        p.dive = Glide::diveButton;
+        p.diveHold = true;
+        g.setParams (p);
+        g.reset();
+        runBlocks (g, l, r, 120.0, 0, sec * 6 / 10);
+        check (near (g.getDive(), -24.0, 0.01), "held Dive reaches its depth after its length");
+        p.diveHold = false;
+        g.setParams (p);
+        runBlocks (g, l, r, 120.0, sec * 6 / 10, sec * 7 / 10);
+        check (g.getDive() == 0.0f, "letting go of Dive snaps back");
+    }
+
+    // Extremes stay bounded.
+    {
+        Glide g;
+        g.prepare (sr, 256);
+        Glide::Params p;
+        p.mode = Glide::scoop;
+        p.division = 0;
+        p.glides = 0xA5A5u;
+        for (int i = 0; i < Glide::maxSteps; ++i) p.notes[(size_t) i] = (i % 2 == 0) ? 24 : -24;
+        p.interval = 24.0f;
+        p.time = 4.0f;
+        p.grain = 0.01f;
+        p.dive = Glide::dive1;
+        p.diveLength = 5;
+        p.diveDepth = -48.0f;
+        g.setParams (p);
+        g.reset();
+        auto l = saw (60.0, sec * 5), r = saw (61.0, sec * 5);
+        run (g, l, r, 175.0, 37);
+        check (allFinite (l) && allFinite (r), "glide stays bounded at extreme settings");
+        check (rms (l, sec, sec * 5) > 0.05, "glide at extremes still makes sound");
+    }
+}
 } // namespace
 
 int main()
@@ -967,6 +1181,7 @@ int main()
     tapeExtrasTests();
     sidechainTests();
     ratchetTests();
+    glideTests();
     performanceTest();
 
     if (failures == 0) std::printf ("All DSP tests passed.\n");

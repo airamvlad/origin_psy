@@ -82,6 +82,21 @@ inline const juce::String ratchetSmear = "ratchet_smear";
 inline const juce::String ratchetTilt = "ratchet_tilt";
 inline const juce::String ratchetMix = "ratchet_mix";
 
+inline const juce::String glideMode = "glide_mode";
+inline const juce::String glideRate = "glide_rate";
+inline const juce::String glideSteps = "glide_steps";
+inline const juce::String glideInterval = "glide_interval";
+inline const juce::String glideTime = "glide_time";
+inline const juce::String glideCurve = "glide_curve";
+inline const juce::String glideDrawn = "glide_drawn";
+inline const juce::String glideGrain = "glide_grain";
+inline const juce::String glideMix = "glide_mix";
+inline const juce::String glideDive = "glide_dive";
+inline const juce::String glideDiveHold = "glide_dive_hold";
+inline const juce::String glideDiveLength = "glide_dive_length";
+inline const juce::String glideDiveDepth = "glide_dive_depth";
+inline const juce::String glideDiveCurve = "glide_dive_curve";
+
 inline juce::String lfoRate (int i) { return "lfo" + juce::String (i + 1) + "_rate"; }
 inline juce::String lfoShape (int i) { return "lfo" + juce::String (i + 1) + "_shape"; }
 inline juce::String macro (int i) { return "macro" + juce::String (i + 1); }
@@ -119,6 +134,8 @@ juce::StringArray lfoShapeNames();
 juce::StringArray noteNames();
 juce::StringArray zapOrderNames();
 juce::StringArray orbitPathNames();
+juce::StringArray glideModeNames();
+juce::StringArray glideDiveNames();
 
 /** Parameters that the modulation matrix may not target (the output level,
     the macros themselves and the Fraza amounts). */

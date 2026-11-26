@@ -692,6 +692,89 @@ int screenshot (const juce::String& path, int module)
     juce::PNGImageFormat png;
     return png.writeImageToStream (image, stream) ? 0 : 1;
 }
+
+void glide()
+{
+    // Glide in a slot: bounded with everything on, at several rates.
+    OriginPsyProcessor g;
+    for (int i = 0; i < Chain::numSlots; ++i) setValue (g, params::slotModule (i), 0.0f);
+    setValue (g, params::slotModule (0), (float) ModuleType::glide);
+    setValue (g, params::glideMode, (float) Glide::scoop);
+    setValue (g, params::glideInterval, 24.0f);
+    setValue (g, params::glideDive, (float) Glide::dive1);
+    setValue (g, params::glideDiveDepth, -48.0f);
+    setValue (g, params::glideGrain, 10.0f);
+    g.setGlidePattern (0xffffu);
+    for (int i = 0; i < Glide::maxSteps; ++i) g.setGlideNote (i, i % 2 ? 24 : -24);
+    for (double rate : { 44100.0, 96000.0 })
+    {
+        g.prepareToPlay (rate, 512);
+        check (healthy (run (g, rate, 512, (int) rate * 3)), "Glide stays bounded at extreme settings");
+    }
+    check (g.getLatencySamples() == 0, "Glide adds no latency");
+
+    // Its pattern, notes and drawn curve are saved with the project.
+    OriginPsyProcessor a;
+    a.setGlidePattern (0x1234u);
+    a.setGlideNote (3, 12);
+    a.setGlideNote (15, -7);
+    setValue (a, params::glideDrawn, 1.0f);
+    for (int i = 0; i < Glide::numDrawnPoints; ++i) a.setGlideDrawnPoint (i, 0.25f);
+    juce::MemoryBlock data;
+    a.getStateInformation (data);
+    OriginPsyProcessor b;
+    b.setStateInformation (data.getData(), (int) data.getSize());
+    check (b.getGlidePattern() == 0x1234u, "state restores the glide steps");
+    check (b.getGlideNote (3) == 12 && b.getGlideNote (15) == -7 && b.getGlideNote (0) == 0, "state restores the step notes");
+    check (b.apvts.getRawParameterValue (params::glideDrawn)->load() > 0.5f
+               && std::abs (b.getGlideDrawnPoint (40) - 0.25f) < 1e-3f, "state restores the drawn glide curve");
+    b.toggleGlideStep (0);
+    check (b.getGlidePattern() == 0x1235u, "clicking a glide step toggles it");
+    b.setGlideNote (1, 99);
+    check (b.getGlideNote (1) == Glide::maxNote, "step notes are kept in range");
+
+    // Projects from before Glide load with its defaults.
+    auto xml = OriginPsyProcessor::getXmlFromBinary (data.getData(), (int) data.getSize());
+    xml->removeAttribute ("glide_pattern");
+    xml->removeAttribute ("glide_notes");
+    xml->removeAttribute ("glide_drawn_curve");
+    juce::MemoryBlock old;
+    OriginPsyProcessor::copyXmlToBinary (*xml, old);
+    b.setStateInformation (old.getData(), (int) old.getSize());
+    check (b.getGlidePattern() == 0x8888u && b.getGlideNote (3) == 0, "old projects get the default glide pattern");
+
+    // Hold G1: the dive bends the sound down; let go: it snaps back.
+    OriginPsyProcessor m;
+    for (int i = 0; i < Chain::numSlots; ++i) setValue (m, params::slotModule (i), 0.0f);
+    setValue (m, params::slotModule (0), (float) ModuleType::glide);
+    setValue (m, params::glideDive, (float) Glide::diveButton);
+    setValue (m, params::glideDiveLength, 0.0f); // 1/16
+    m.setGlidePattern (0);
+    m.prepareToPlay (48000.0, 256);
+    juce::AudioBuffer<float> buffer (2, 256);
+    auto block = [&] (const juce::MidiBuffer& mb) {
+        buffer.clear();
+        juce::MidiBuffer copy (mb);
+        m.processBlock (buffer, copy);
+    };
+    juce::MidiBuffer on, off, none;
+    on.addEvent (juce::MidiMessage::noteOn (1, OriginPsyProcessor::midiNoteDive, (juce::uint8) 100), 0);
+    off.addEvent (juce::MidiMessage::noteOff (1, OriginPsyProcessor::midiNoteDive), 0);
+    block (on);
+    for (int i = 0; i < 40; ++i) block (none);
+    check (m.meters.midiDive.load() && m.meters.glideDive.load() < -20.0f, "holding G1 dives");
+    block (off);
+    block (none);
+    check (! m.meters.midiDive.load() && m.meters.glideDive.load() == 0.0f, "letting go of G1 snaps back");
+
+    // The factory Glide presets load their patterns.
+    PresetManager pm (m);
+    const auto entries = pm.list();
+    for (size_t i = 0; i < entries.size(); ++i)
+        if (entries[i].name == "Acid Slide Line") pm.load (entries[i]);
+    check (m.currentPresetName == "Acid Slide Line" && m.getGlideNote (3) == 12 && m.getGlidePattern() == 0xE858u,
+           "Acid Slide Line sets its notes and slides");
+}
 } // namespace
 
 int main (int argc, char** argv)
@@ -716,6 +799,7 @@ int main (int argc, char** argv)
     reorder();
     randomizer();
     latencyAndRatchet();
+    glide();
 
     if (failures == 0) std::printf ("All plugin tests passed.\n");
     else std::printf ("%d plugin test(s) failed.\n", failures);

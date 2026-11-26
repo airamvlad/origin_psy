@@ -16,6 +16,7 @@ juce::Colour moduleColour (int type)
         case ModuleType::orbitDoppler:  return colours::blue;
         case ModuleType::tapeStop:      return colours::orange;
         case ModuleType::spectralRatchet: return colours::violet;
+        case ModuleType::glide:         return colours::rose;
         case ModuleType::empty:         break;
     }
     return colours::dim;
@@ -910,6 +911,478 @@ void RatchetPage::resized()
 }
 
 //==============================================================================
+GlideCurveView::GlideCurveView (OriginPsyProcessor& p) : proc (p)
+{
+    setTooltip ("How the pitch travels during a glide: bottom = where it starts, top = where it lands. Draw your own "
+                "shape (wobbles, steps, overshoots inside the range); right-click to go back to the Curve knob");
+}
+
+bool GlideCurveView::drawnOn() const { return proc.apvts.getRawParameterValue (params::glideDrawn)->load() > 0.5f; }
+int GlideCurveView::numPoints() const { return Glide::numDrawnPoints; }
+float GlideCurveView::getPoint (int i) const { return proc.getGlideDrawnPoint (i); }
+void GlideCurveView::setPoint (int i, float v) { proc.setGlideDrawnPoint (i, v); }
+
+float GlideCurveView::defaultPoint (int i) const
+{
+    return Glide::knobShape (-0.4f, (double) i / (Glide::numDrawnPoints - 1));
+}
+
+juce::Rectangle<float> GlideCurveView::curveArea() const
+{
+    return getLocalBounds().toFloat().reduced (10.0f, 12.0f).withTrimmedTop (10.0f);
+}
+
+void GlideCurveView::beginDrawing()
+{
+    if (drawnOn()) return;
+    std::array<float, Glide::numDrawnPoints> pts {};
+    Glide::fillDrawnFromKnob (proc.apvts.getRawParameterValue (params::glideCurve)->load(), pts.data());
+    for (int i = 0; i < Glide::numDrawnPoints; ++i) proc.setGlideDrawnPoint (i, pts[(size_t) i]);
+    if (auto* prm = proc.apvts.getParameter (params::glideDrawn))
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (1.0f);
+        prm->endChangeGesture();
+    }
+}
+
+void GlideCurveView::addMenuItems (juce::PopupMenu& m)
+{
+    m.addSeparator();
+    m.addItem (100, "Use the Curve knob instead", drawnOn());
+    m.addSectionHeader ("Ready-made shapes");
+    m.addItem (101, "Overshoot and settle");
+    m.addItem (102, "Wobble in");
+    m.addItem (103, "Stairs (4 steps)");
+    m.addItem (104, "Late snap");
+}
+
+void GlideCurveView::menuItemChosen (int id)
+{
+    if (id == 100)
+    {
+        if (auto* prm = proc.apvts.getParameter (params::glideDrawn))
+        {
+            prm->beginChangeGesture();
+            prm->setValueNotifyingHost (0.0f);
+            prm->endChangeGesture();
+        }
+        return;
+    }
+    beginDrawing();
+    const int n = Glide::numDrawnPoints;
+    for (int i = 0; i < n; ++i)
+    {
+        const double x = (double) i / (n - 1);
+        double y = x;
+        switch (id)
+        {
+            // The curve stays inside 0..1, so an "overshoot" goes 85 % of the way fast and then settles.
+            case 101: y = x < 0.35 ? 0.95 * std::sin (x / 0.35 * pi * 0.5) : 0.95 + 0.05 * (x - 0.35) / 0.65
+                                                                                 + 0.05 * std::sin ((x - 0.35) / 0.65 * pi * 3.0) * (1.0 - x); break;
+            case 102: y = x + 0.18 * std::sin (x * twoPi * 3.0) * (1.0 - x); break;
+            case 103: y = std::min (1.0, std::floor (x * 4.0 + 1.0e-9) / 3.0); break;
+            case 104: y = x < 0.8 ? 0.1 * x / 0.8 : 0.1 + 0.9 * (x - 0.8) / 0.2; break;
+            default: break;
+        }
+        proc.setGlideDrawnPoint (i, (float) juce::jlimit (0.0, 1.0, y));
+    }
+}
+
+void GlideCurveView::edited()
+{
+    proc.updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
+}
+
+void GlideCurveView::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (colours::panelLight);
+    g.fillRoundedRectangle (r, 6.0f);
+    const auto area = curveArea();
+    const bool drawn = drawnOn();
+
+    g.setColour (colours::outline);
+    g.drawHorizontalLine ((int) area.getY(), area.getX(), area.getRight());
+    g.drawHorizontalLine ((int) area.getBottom(), area.getX(), area.getRight());
+
+    juce::Path path;
+    if (drawn)
+    {
+        path = pointsPath (area);
+    }
+    else
+    {
+        const float c = proc.apvts.getRawParameterValue (params::glideCurve)->load();
+        for (int i = 0; i < Glide::numDrawnPoints; ++i)
+        {
+            const float x = area.getX() + area.getWidth() * (float) i / (float) (Glide::numDrawnPoints - 1);
+            const float y = area.getBottom() - Glide::knobShape (c, (double) i / (Glide::numDrawnPoints - 1)) * area.getHeight();
+            if (i == 0) path.startNewSubPath (x, y); else path.lineTo (x, y);
+        }
+    }
+    auto fill = path;
+    fill.lineTo (area.getRight(), area.getBottom());
+    fill.lineTo (area.getX(), area.getBottom());
+    fill.closeSubPath();
+    g.setColour (colours::rose.withAlpha (drawn ? 0.15f : 0.06f));
+    g.fillPath (fill);
+    g.setColour (drawn ? colours::rose : colours::rose.withAlpha (0.6f));
+    g.strokePath (path, juce::PathStrokeType (2.0f));
+
+    g.setFont (juce::FontOptions (10.5f));
+    g.setColour (colours::dim);
+    const auto label = r.reduced (10.0f, 4.0f).withHeight (14.0f);
+    g.drawText ("GLIDE SHAPE", label, juce::Justification::topLeft);
+    g.drawText (drawn ? "drawn" : (isMouseOverOrDragging() ? "draw to edit" : "Curve knob"), label,
+                juce::Justification::topRight);
+    g.drawText ("start", area.withTop (area.getBottom() - 12.0f).translated (0.0f, -2.0f), juce::Justification::bottomRight);
+    g.drawText ("target", area.withHeight (12.0f).translated (0.0f, 2.0f), juce::Justification::topRight);
+}
+
+//==============================================================================
+GlideSteps::GlideSteps (OriginPsyProcessor& p) : proc (p)
+{
+    setTooltip ("Top row: click to switch Glide on a step (drag to paint). Lane: drag up and down to set each step's "
+                "note in semitones, double-click for 0. Right-click for more");
+}
+
+juce::Rectangle<float> GlideSteps::traceArea() const
+{
+    return getLocalBounds().toFloat().reduced (4.0f, 0.0f).withHeight (58.0f);
+}
+
+juce::Rectangle<float> GlideSteps::glideRow() const
+{
+    return getLocalBounds().toFloat().reduced (4.0f, 0.0f).withTrimmedTop (66.0f).withHeight (22.0f);
+}
+
+juce::Rectangle<float> GlideSteps::noteLane() const
+{
+    return getLocalBounds().toFloat().reduced (4.0f, 0.0f).withTrimmedTop (94.0f).withTrimmedBottom (18.0f);
+}
+
+int GlideSteps::stepAt (float x) const
+{
+    const auto row = glideRow();
+    return juce::jlimit (0, Glide::maxSteps - 1, (int) ((x - row.getX()) / (row.getWidth() / (float) Glide::maxSteps)));
+}
+
+int GlideSteps::noteAt (float y) const
+{
+    const auto lane = noteLane();
+    const float v = juce::jlimit (0.0f, 1.0f, (lane.getBottom() - y) / lane.getHeight());
+    return juce::roundToInt (-24.0f + 48.0f * v);
+}
+
+void GlideSteps::tick()
+{
+    trace[(size_t) tracePos] = proc.meters.glidePitch.load();
+    tracePos = (tracePos + 1) % (int) trace.size();
+}
+
+void GlideSteps::edited()
+{
+    proc.updateHostDisplay (juce::AudioProcessor::ChangeDetails().withNonParameterStateChanged (true));
+}
+
+void GlideSteps::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu()) { showMenu(); return; }
+    const int s = stepAt (e.position.x);
+    lastDragStep = s;
+    if (glideRow().expanded (0.0f, 4.0f).contains (e.position))
+    {
+        drag = glides;
+        paintGlideOn = ((proc.getGlidePattern() >> s) & 1u) == 0;
+        proc.toggleGlideStep (s);
+    }
+    else if (noteLane().expanded (0.0f, 6.0f).contains (e.position))
+    {
+        drag = notes;
+        proc.setGlideNote (s, noteAt (e.position.y));
+    }
+    else
+    {
+        drag = none;
+    }
+    repaint();
+}
+
+void GlideSteps::mouseDrag (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu() || drag == none) return;
+    const int s = stepAt (e.position.x);
+    if (drag == glides)
+    {
+        const int from = std::min (s, lastDragStep), to = std::max (s, lastDragStep);
+        for (int i = from; i <= to; ++i)
+        {
+            const bool on = ((proc.getGlidePattern() >> i) & 1u) != 0;
+            if (on != paintGlideOn) proc.toggleGlideStep (i);
+        }
+    }
+    else
+    {
+        // Paint across the steps the mouse went over.
+        const int from = std::min (s, lastDragStep), to = std::max (s, lastDragStep);
+        for (int i = from; i <= to; ++i) proc.setGlideNote (i, noteAt (e.position.y));
+    }
+    lastDragStep = s;
+    repaint();
+}
+
+void GlideSteps::mouseUp (const juce::MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu() && drag != none) edited();
+    drag = none;
+}
+
+void GlideSteps::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (noteLane().expanded (0.0f, 6.0f).contains (e.position))
+    {
+        proc.setGlideNote (stepAt (e.position.x), 0);
+        edited();
+        repaint();
+    }
+}
+
+void GlideSteps::showMenu()
+{
+    juce::PopupMenu m;
+    m.addSectionHeader ("Glide steps");
+    m.addItem (1, "Glide on every step");
+    m.addItem (2, "Glide on the last 1/16 of each beat");
+    m.addItem (3, "Glide on the off-beats");
+    m.addItem (4, "No glides");
+    m.addItem (5, "Random glides");
+    m.addSectionHeader ("Notes");
+    m.addItem (10, "All notes to 0");
+    m.addItem (11, "Octave jumps (0 / +12)");
+    m.addItem (12, "Random notes in minor");
+    m.addItem (13, "Shift pattern left");
+    m.addItem (14, "Shift pattern right");
+    m.addItem (15, "Notes up an octave");
+    m.addItem (16, "Notes down an octave");
+    juce::Component::SafePointer<GlideSteps> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int choice) {
+        if (safe == nullptr || choice <= 0) return;
+        auto& self = *safe;
+        auto& p = self.proc;
+        juce::Random rng;
+        std::array<int, Glide::maxSteps> n {};
+        for (int i = 0; i < Glide::maxSteps; ++i) n[(size_t) i] = p.getGlideNote (i);
+        const uint32_t pattern = p.getGlidePattern();
+        switch (choice)
+        {
+            case 1: p.setGlidePattern (0xffffu); break;
+            case 2: p.setGlidePattern (0x8888u); break;
+            case 3: p.setGlidePattern (0x4444u); break;
+            case 4: p.setGlidePattern (0u); break;
+            case 5: p.setGlidePattern ((uint32_t) rng.nextInt (0x10000) & (uint32_t) rng.nextInt (0x10000)); break;
+            case 10: n.fill (0); break;
+            case 11: for (int i = 0; i < Glide::maxSteps; ++i) n[(size_t) i] = (i % 4 == 3) ? 12 : 0; break;
+            case 12:
+            {
+                static constexpr int minor[] = { -12, -9, -7, -5, -2, 0, 0, 0, 3, 5, 7, 10, 12 };
+                for (auto& v : n) v = minor[rng.nextInt ((int) std::size (minor))];
+                break;
+            }
+            case 13:
+            case 14:
+            {
+                const bool left = choice == 13;
+                std::rotate (n.begin(), left ? n.begin() + 1 : n.end() - 1, n.end());
+                const uint32_t shifted = left ? ((pattern >> 1) | ((pattern & 1u) << 15))
+                                              : (((pattern << 1) & 0xffffu) | (pattern >> 15));
+                p.setGlidePattern (shifted);
+                break;
+            }
+            case 15: for (auto& v : n) v = std::min (Glide::maxNote, v + 12); break;
+            case 16: for (auto& v : n) v = std::max (Glide::minNote, v - 12); break;
+            default: break;
+        }
+        if (choice >= 10)
+            for (int i = 0; i < Glide::maxSteps; ++i) p.setGlideNote (i, n[(size_t) i]);
+        self.edited();
+        self.repaint();
+    });
+}
+
+void GlideSteps::paint (juce::Graphics& g)
+{
+    const int count = (int) proc.apvts.getRawParameterValue (params::glideSteps)->load();
+    const int playing = proc.meters.glideStep.load();
+    const auto pattern = proc.getGlidePattern();
+
+    // Pitch trace: the last few seconds of pitch, ±24 semitones.
+    const auto ta = traceArea();
+    g.setColour (colours::panelLight);
+    g.fillRoundedRectangle (ta, 5.0f);
+    g.setColour (colours::outline);
+    g.drawHorizontalLine ((int) ta.getCentreY(), ta.getX() + 4.0f, ta.getRight() - 4.0f);
+    juce::Path path;
+    const int n = (int) trace.size();
+    for (int i = 0; i < n; ++i)
+    {
+        const float v = juce::jlimit (-24.0f, 24.0f, trace[(size_t) ((tracePos + i) % n)]);
+        const float x = ta.getX() + 4.0f + (ta.getWidth() - 8.0f) * (float) i / (float) (n - 1);
+        const float y = ta.getCentreY() - v / 24.0f * (ta.getHeight() * 0.5f - 4.0f);
+        if (i == 0) path.startNewSubPath (x, y); else path.lineTo (x, y);
+    }
+    g.setColour (colours::rose);
+    g.strokePath (path, juce::PathStrokeType (1.6f));
+    const float now = proc.meters.glidePitch.load();
+    const float diveNow = proc.meters.glideDive.load();
+    g.setFont (juce::FontOptions (11.0f));
+    g.setColour (colours::text);
+    g.drawText ((now > 0.05f ? "+" : "") + juce::String (now, 1) + " st", ta.reduced (8.0f, 4.0f), juce::Justification::topRight);
+    g.setColour (colours::dim);
+    g.drawText ("PITCH", ta.reduced (8.0f, 4.0f), juce::Justification::topLeft);
+    if (std::abs (diveNow) > 0.05f)
+    {
+        g.setColour (colours::amber);
+        g.drawText ("DIVE " + juce::String (diveNow, 1), ta.reduced (8.0f, 4.0f), juce::Justification::bottomRight);
+    }
+
+    // Glide switches and note lane.
+    const auto row = glideRow();
+    const auto lane = noteLane();
+    const float sw = row.getWidth() / (float) Glide::maxSteps;
+    const float zeroY = lane.getBottom() - 0.5f * lane.getHeight();
+    for (int i = 0; i < Glide::maxSteps; ++i)
+    {
+        const bool active = i < count;
+        const bool on = ((pattern >> i) & 1u) != 0;
+        auto cell = juce::Rectangle<float> (row.getX() + sw * (float) i, row.getY(), sw, row.getHeight()).reduced (1.5f, 0.0f);
+        g.setColour (on ? colours::rose.withAlpha (active ? 0.85f : 0.3f) : colours::panelLight.withAlpha (active ? 1.0f : 0.4f));
+        g.fillRoundedRectangle (cell, 3.0f);
+        if (on)
+        {
+            // A little slide symbol.
+            g.setColour (colours::background.withAlpha (active ? 0.9f : 0.5f));
+            g.drawLine (cell.getX() + 4.0f, cell.getBottom() - 5.0f, cell.getRight() - 4.0f, cell.getY() + 5.0f, 2.0f);
+        }
+
+        auto col = juce::Rectangle<float> (lane.getX() + sw * (float) i, lane.getY(), sw, lane.getHeight()).reduced (1.5f, 0.0f);
+        g.setColour (colours::panelLight.withAlpha (active ? 1.0f : 0.4f));
+        g.fillRoundedRectangle (col, 3.0f);
+        const int note = proc.getGlideNote (i);
+        const float y = lane.getBottom() - (float) (note + 24) / 48.0f * lane.getHeight();
+        auto bar = juce::Rectangle<float>::leftTopRightBottom (col.getX() + 2.0f, std::min (y, zeroY), col.getRight() - 2.0f,
+                                                               std::max (y, zeroY));
+        g.setColour ((note == 0 ? colours::dim : colours::rose).withAlpha (active ? 0.9f : 0.35f));
+        g.fillRect (bar.withHeight (std::max (2.0f, bar.getHeight())).withY (note == 0 ? zeroY - 1.0f : bar.getY()));
+        if (note != 0)
+        {
+            g.setColour (colours::text.withAlpha (active ? 1.0f : 0.5f));
+            g.setFont (juce::FontOptions (9.5f));
+            g.drawText (juce::String (note), col.withHeight (12.0f).withY (note > 0 ? y - 13.0f : y + 1.0f)
+                                                 .constrainedWithin (col),
+                        juce::Justification::centred);
+        }
+        if (i == playing)
+        {
+            g.setColour (colours::text);
+            g.drawRoundedRectangle (cell, 3.0f, 1.5f);
+            g.drawRoundedRectangle (col, 3.0f, 1.0f);
+        }
+    }
+    g.setColour (colours::outline);
+    g.drawHorizontalLine ((int) zeroY, lane.getX(), lane.getRight());
+    for (int k : { -12, 12 })
+    {
+        const float y = lane.getBottom() - (float) (k + 24) / 48.0f * lane.getHeight();
+        for (float x = lane.getX(); x < lane.getRight(); x += 6.0f) g.drawHorizontalLine ((int) y, x, x + 2.0f);
+    }
+    g.setColour (colours::dim);
+    g.setFont (juce::FontOptions (10.5f));
+    g.drawText ("GLIDE ON STEP", row.translated (0.0f, -15.0f).withHeight (12.0f), juce::Justification::centredLeft);
+    g.drawText ("step notes (semitones, double-click = 0)", lane.withY (lane.getBottom() + 3.0f).withHeight (13.0f),
+                juce::Justification::centredLeft);
+}
+
+//==============================================================================
+GlidePage::GlidePage (OriginPsyProcessor& p)
+    : proc (p),
+      mode (p.apvts, params::glideMode, "Mode"),
+      rate (p.apvts, params::glideRate, "Step rate"),
+      dive (p.apvts, params::glideDive, "Dive"),
+      diveLength (p.apvts, params::glideDiveLength, "Dive length"),
+      steps (p.apvts, params::glideSteps, "Steps", colours::rose),
+      interval (p.apvts, params::glideInterval, "Interval", colours::rose),
+      time (p.apvts, params::glideTime, "Time", colours::rose),
+      curve (p.apvts, params::glideCurve, "Curve", colours::rose),
+      grain (p.apvts, params::glideGrain, "Grain", colours::rose),
+      mix (p.apvts, params::glideMix, "Mix", colours::rose),
+      diveDepth (p.apvts, params::glideDiveDepth, "Dive depth", colours::amber),
+      diveCurve (p.apvts, params::glideDiveCurve, "Dive curve", colours::amber),
+      stepsView (p),
+      curveView (p)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &mode, &rate, &dive, &diveLength, &steps, &interval, &time, &curve,
+                                                            &grain, &mix, &diveDepth, &diveCurve, &diveButton, &stepsView,
+                                                            &curveView })
+        addAndMakeVisible (c);
+    mode.box.setTooltip ("Slide: the pitch follows the step notes and slides into glide steps. Bend in: glide steps start "
+                     "Interval away and slide onto the note. Bend out: glide steps slide away by Interval. Scoop: "
+                     "out by Interval and back");
+    diveButton.setColour (juce::TextButton::buttonColourId, colours::amber.withAlpha (0.25f));
+    diveButton.setColour (juce::TextButton::buttonOnColourId, colours::amber.withAlpha (0.8f));
+    diveButton.setTooltip ("With Dive set to Dive button: hold to bend the whole sound by Dive depth, let go to snap back. "
+                           "Automate Glide Dive Hold, or hold MIDI note G1.");
+    diveButton.onStateChange = [this] {
+        const bool down = diveButton.isDown();
+        const bool on = proc.apvts.getRawParameterValue (params::glideDiveHold)->load() > 0.5f;
+        if (down != on) setDive (down);
+    };
+}
+
+void GlidePage::setDive (bool on)
+{
+    if (auto* prm = proc.apvts.getParameter (params::glideDiveHold))
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (on ? 1.0f : 0.0f);
+        prm->endChangeGesture();
+    }
+}
+
+void GlidePage::paint (juce::Graphics& g)
+{
+    drawPanel (g, getLocalBounds().toFloat(), colours::rose, "GLIDE");
+    diveButton.setToggleState (proc.apvts.getRawParameterValue (params::glideDiveHold)->load() > 0.5f
+                                   || proc.meters.midiDive.load(),
+                               juce::dontSendNotification);
+    if (isShowing()) stepsView.tick();
+    stepsView.repaint();
+    curveView.repaint();
+}
+
+void GlidePage::resized()
+{
+    stepsView.setBounds (16, 34, 400, 270);
+    curveView.setBounds (428, 36, 180, 206);
+    diveButton.setBounds (440, 252, 156, 40);
+
+    auto r = getLocalBounds().withTrimmedLeft (620).reduced (12, 30);
+    for (int row = 0; row < 2; ++row)
+    {
+        auto line = r.removeFromTop (46);
+        Choice* left = row == 0 ? &mode : &dive;
+        Choice* right = row == 0 ? &rate : &diveLength;
+        left->setBounds (line.removeFromLeft (line.getWidth() / 2).reduced (4, 0));
+        right->setBounds (line.reduced (4, 0));
+        r.removeFromTop (6);
+    }
+    const int kw = r.getWidth() / 4, kh = r.getHeight() / 2;
+    juce::Component* knobs[] = { &steps, &interval, &time, &curve, &grain, &mix, &diveDepth, &diveCurve };
+    for (int i = 0; i < 8; ++i)
+        knobs[i]->setBounds (r.getX() + (i % 4) * kw, r.getY() + (i / 4) * kh, kw, kh);
+}
+
+//==============================================================================
 GateRing::GateRing (OriginPsyProcessor& p, int b) : proc (p), band (b) {}
 
 void GateRing::paint (juce::Graphics& g)
@@ -1701,7 +2174,7 @@ void SlotCard::itemDropped (const SourceDetails& d)
 //==============================================================================
 OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
-      echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), tapePage (p), ratchetPage (p), fraza (p), modStrip (p), presetBar (p),
+      echoPage (p), vokalPage (p), gatePage (p), zapPage (p), orbitPage (p), tapePage (p), ratchetPage (p), glidePage (p), fraza (p), modStrip (p), presetBar (p),
       output (p.apvts, params::outGain, "Output", colours::cyan, true),
       mix (p.apvts, params::outMix, "Dry/Wet", colours::cyan, true)
 {
@@ -1718,6 +2191,7 @@ OriginPsyEditor::OriginPsyEditor (OriginPsyProcessor& p)
     addChildComponent (orbitPage);
     addChildComponent (tapePage);
     addChildComponent (ratchetPage);
+    addChildComponent (glidePage);
     addAndMakeVisible (fraza);
     addAndMakeVisible (modStrip);
     addAndMakeVisible (presetBar);
@@ -1750,6 +2224,7 @@ void OriginPsyEditor::showModule (int type)
     orbitPage.setVisible (type == (int) ModuleType::orbitDoppler);
     tapePage.setVisible (type == (int) ModuleType::tapeStop);
     ratchetPage.setVisible (type == (int) ModuleType::spectralRatchet);
+    glidePage.setVisible (type == (int) ModuleType::glide);
     for (auto& c : cards)
     {
         c->selected = c->moduleType() == type;
@@ -1805,7 +2280,7 @@ void OriginPsyEditor::resized()
         place (*cards[(size_t) i], { 16 + i * 255, 60, 243, 76 });
     for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
                                 (juce::Component*) &zapPage, (juce::Component*) &orbitPage,
-                                (juce::Component*) &tapePage, (juce::Component*) &ratchetPage })
+                                (juce::Component*) &tapePage, (juce::Component*) &ratchetPage, (juce::Component*) &glidePage })
         place (*page, { 16, 248, 1008, 316 });
     place (modStrip, { 16, 148, 1008, 88 });
     place (fraza, { 16, 576, 1008, 208 });
@@ -1826,7 +2301,7 @@ void OriginPsyEditor::timerCallback()
     // Knobs show their modulation live.
     for (juce::Component* page : { (juce::Component*) &echoPage, (juce::Component*) &vokalPage, (juce::Component*) &gatePage,
                                 (juce::Component*) &zapPage, (juce::Component*) &orbitPage,
-                                (juce::Component*) &tapePage, (juce::Component*) &ratchetPage })
+                                (juce::Component*) &tapePage, (juce::Component*) &ratchetPage, (juce::Component*) &glidePage })
         if (page->isVisible()) page->repaint();
     if (proc.currentPresetName != presetBar.shownName) presetBar.syncName();
     repaint (getLocalBounds().withHeight (getHeight() * 56 / 790));
